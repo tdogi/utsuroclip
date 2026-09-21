@@ -45,10 +45,17 @@ class CodexRunner:
             "exec",
             "--sandbox",
             "workspace-write",
-            "--output-last-message",
-            str(final_message),
-            prompt,
         ]
+        if stage == "generate-video":
+            command.extend([
+                "--config",
+                "sandbox_workspace_write.network_access=true",
+                "--config",
+                "features.network_proxy.enabled=true",
+                "--config",
+                'features.network_proxy.domains={ "127.0.0.1" = "allow" }',
+            ])
+        command.extend(["--output-last-message", str(final_message), prompt])
         result = subprocess.run(
             command,
             cwd=self.project.root,

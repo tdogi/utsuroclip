@@ -11,3 +11,11 @@ extends = ":workspace"
 
 [permissions.workspace_write.filesystem.":project_roots"]
 ".git" = "write"
+
+# VOICEVOX Engine のローカル API だけを利用できるようにする。
+[sandbox_workspace_write]
+network_access = true
+
+[features.network_proxy]
+enabled = true
+domains = { "127.0.0.1" = "allow" }

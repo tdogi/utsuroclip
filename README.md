@@ -80,6 +80,8 @@ bash setup.sh
 
 このコマンドは `AGENTS.user.md` を `AGENTS.md` へ、`.codex.user/` を `.codex/` へ、`.agents.user/` を `.agents/` へコピーします。同名の設定ファイルは上書きされるため、独自の変更がある場合は事前に退避してください。
 
+動画生成時、UtsuroClip は VOICEVOX Engine の既定URLである `http://127.0.0.1:50021` だけへ接続できる Codex ネットワーク設定を明示的に適用します。公開インターネットや他のローカル宛先は許可しません。VOICEVOX Engine を別のホストまたは `localhost` 名で起動する場合は、この許可先の変更が必要です。
+
 UtsuroClip本体を開発する場合は、代わりに次を実行します。
 
 ```bash

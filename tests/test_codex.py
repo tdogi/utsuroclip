@@ -39,6 +39,10 @@ class CodexRunnerTests(unittest.TestCase):
             first_command = run.call_args_list[0].args[0]
             self.assertEqual(first_command[:4], ["fake-codex", "exec", "--sandbox", "workspace-write"])
             self.assertIn("--output-last-message", first_command)
+            video_command = run.call_args_list[2].args[0]
+            self.assertIn("sandbox_workspace_write.network_access=true", video_command)
+            self.assertIn("features.network_proxy.enabled=true", video_command)
+            self.assertIn('features.network_proxy.domains={ "127.0.0.1" = "allow" }', video_command)
             self.assertTrue((project.logs / "research.stdout.log").is_file())
             self.assertEqual((project.logs / "research.stderr.log").read_text(encoding="utf-8"), "progress")
 

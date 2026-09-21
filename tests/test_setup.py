@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 from tempfile import TemporaryDirectory
+import tomllib
 import unittest
 
 
@@ -27,7 +28,12 @@ class SetupTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / "AGENTS.md").read_text(encoding="utf-8"), (root / "AGENTS.user.md").read_text(encoding="utf-8"))
-            self.assertTrue((root / ".codex" / "config.toml").is_file())
+            config_path = root / ".codex" / "config.toml"
+            self.assertTrue(config_path.is_file())
+            config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+            self.assertTrue(config["sandbox_workspace_write"]["network_access"])
+            self.assertTrue(config["features"]["network_proxy"]["enabled"])
+            self.assertEqual(config["features"]["network_proxy"]["domains"], {"127.0.0.1": "allow"})
             self.assertTrue((root / ".agents" / "skills" / "video-generation" / "SKILL.md").is_file())
 
     def test_development_mode_deploys_development_settings(self) -> None:
