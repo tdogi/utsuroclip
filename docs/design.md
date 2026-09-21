@@ -43,6 +43,8 @@ UtsuroClipでは、開発時と動画生成時でCodexの役割が大きく異�
 * VOICEVOX Engine
 * FFmpeg
 
+Codex CLI、VOICEVOX Engine、Manim Community Edition、FFmpegはUtsuroClipに同梱せず、利用者があらかじめインストールする。導入方法、動作確認、OS別の注意点は `README.md` に記載する。UtsuroClipは各ツールの不在や実行失敗を明示し、存在しない成果物を成功として扱わない。
+
 ---
 
 ## 4. 基本フロー
@@ -145,7 +147,10 @@ utsuroclip/
 │   └── rules/
 │       └── default.rules
 │
-├── .agents/
+├── .codex.user/
+│   └── config.toml
+│
+├── .agents.user/
 │   └── skills/
 │       └── video-generation/
 │           └── SKILL.md
@@ -208,12 +213,14 @@ UtsuroClipを利用して動画を生成するときのルールを定義する�
 
 開発/利用時のAGENTSファイルやCodexの設定ファイルを適切に配置する。
 
+通常モードでは `AGENTS.user.md` を `AGENTS.md` へ、`.codex.user/` を `.codex/` へ、`.agents.user/` を `.agents/` へコピーする。開発モードでは `AGENTS.dev.md` と `.codex.dev/` を配置する。同名ファイルは上書きされるため、利用者は必要に応じて独自設定を退避する。
+
 ```bash
 # Development Mode
-bash setup --dev
+bash setup.sh --dev
 
 # User Mode
-bash setup
+bash setup.sh
 ```
 
 #### `docs/`
@@ -230,15 +237,17 @@ docs/design.md
 
 開発者向けのCodex設定ファイルを格納する
 
-#### `.agents/skills/`
+#### `.agents.user/skills/`
 
 Codexが動画構成や演出を考える際に参照するSkillを格納する。
 
 UtsuroClip固有の動画制作ノウハウは以下に定義する。
 
 ```text
-.agents/skills/video-generation/SKILL.md
+.agents.user/skills/video-generation/SKILL.md
 ```
+
+通常モードのセットアップ時に `.agents/skills/video-generation/SKILL.md` として配置する。
 
 #### `prompts/`
 
@@ -345,10 +354,10 @@ Codex
 
 ```bash
 # Development Mode
-bash setup --dev
+bash setup.sh --dev
 
 # User Mode
-bash setup
+bash setup.sh
 ```
 
 ---
@@ -361,7 +370,7 @@ UtsuroClipでは、Codexへの指示を以下の3種類に分離する。
 AGENTS.md
 → Codexが現在のモードで守る基本ルール
 
-.agents/skills/
+.agents.user/skills/
 → 動画制作に関する再利用可能な知識・ノウハウ
 
 prompts/
@@ -393,6 +402,8 @@ utsuroclip generate input/request.md
 * Codex CLIを起動する
 * 調査・台本作成・動画生成処理を開始する
 * 実行結果をユーザーへ表示する
+* 各工程の標準出力・標準エラー・最終メッセージを `work/logs/` に保存する
+* 正常終了前に `output/video.mp4` が生成されていることを確認する
 
 ---
 
@@ -417,6 +428,8 @@ Video
 ```
 
 CodexはAGENTS、Prompt、Skill、動画概要、中間生成物を参照し、動画生成に必要な処理を進める。
+
+CLIは `codex exec --sandbox workspace-write` を使い、Research、Script、Video Generationをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。いずれかの工程が失敗した場合、後続工程は実行しない。
 
 ---
 
@@ -507,6 +520,8 @@ Codexが動画を制作する際の演出方針やノウハウを定義する。
 
 VOICEVOX Engine APIを呼び出し、各シーンのナレーション音声を生成する。
 
+`/audio_query` と `/synthesis` を使用し、既定では `http://127.0.0.1:50021` のローカルEngineへ接続する。話者IDとEngine URLはCLI引数で変更できる。
+
 ```text
 ナレーション文章
 ↓
@@ -523,6 +538,8 @@ work/audio/scene_001.wav
 
 Codexが生成したManimコードを実行し、各シーンの映像を生成する。
 
+レンダリング後、Manimの一時メディアディレクトリから生成したMP4を指定された出力パスへ配置する。
+
 ```text
 work/scenes/scene_001.py
 ↓
@@ -538,6 +555,8 @@ work/rendered/scene_001.mp4
 `tools/ffmpeg.py`
 
 Manimで生成した映像とVOICEVOX音声を結合し、複数のシーンを1本の動画としてまとめる。
+
+`mux` サブコマンドでシーン映像と音声を結合し、`concat` サブコマンドで結合済みシーンを順番に連結する。
 
 ```text
 scene_001.mp4 + scene_001.wav

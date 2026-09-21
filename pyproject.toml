@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "utsuroclip"
+version = "0.1.0"
+description = "Codex、Manim、VOICEVOX、FFmpegで短尺解説動画を生成するCLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "UtsuroClip contributors" }]
+dependencies = []
+
+[project.scripts]
+utsuroclip = "utsuroclip.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

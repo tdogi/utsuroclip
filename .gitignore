@@ -1,6 +1,29 @@
-# Ignore the .codex directory and AGENTS.md file
+# Generated mode-specific Codex configuration and AGENTS file
 .codex/
+.agents/
 AGENTS.md
+
+# Generated video artifacts and Codex logs
+work/audio/*
+!work/audio/.gitkeep
+work/scenes/*
+!work/scenes/.gitkeep
+work/rendered/*
+!work/rendered/.gitkeep
+work/logs/*
+!work/logs/.gitkeep
+work/research/research.md
+work/research/sources.md
+work/script/script.md
+output/*
+!output/.gitkeep
 
 # Ignore the .vscode directory
 .vscode/
+
+# Python build and interpreter artifacts
+__pycache__/
+*.egg-info/
+
+# Ignore virtual environment directories
+.venv/
