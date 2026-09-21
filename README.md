@@ -49,6 +49,22 @@ manim --version
 
 ManimはFFmpegやCairo/Pangoなどのシステム依存を必要とする場合があります。OSごとの追加手順は[公式インストールガイド](https://docs.manim.community/en/stable/installation.html)を参照してください。
 
+### 日本語フォント
+
+映像内に日本語のテキストを表示する場合、Manimが利用できる日本語フォントが必要です。Ubuntu / Debianでは、Noto CJKフォントを導入してフォントキャッシュを更新します。
+
+```bash
+sudo apt update
+sudo apt install fonts-noto-cjk
+fc-cache -f
+```
+
+導入後、次のコマンドで日本語対応フォント（例: `Noto Sans CJK JP`）が表示されることを確認してください。
+
+```bash
+fc-list :lang=ja family | sort -u
+```
+
 ### 4. FFmpeg
 
 代表的な導入例です。Windowsは[公式配布ページ](https://ffmpeg.org/download.html)または利用中のパッケージマネージャーを使用してください。

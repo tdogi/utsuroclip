@@ -4,6 +4,16 @@
 AGENTS.md
 
 # Generated video artifacts and Codex logs
+# Ignore any undocumented files or directories generated directly in work/.
+# The documented artifact directories remain visible so their .gitkeep files
+# and the rules below continue to apply.
+work/*
+!work/audio/
+!work/logs/
+!work/rendered/
+!work/research/
+!work/scenes/
+!work/script/
 work/audio/*
 !work/audio/.gitkeep
 work/scenes/*
