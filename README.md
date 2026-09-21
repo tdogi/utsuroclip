@@ -139,3 +139,9 @@ Codex CLIの実行ファイルやプロジェクトルートを明示したい�
 ```bash
 utsuroclip generate /absolute/path/request.md --project-root /path/to/utsuroclip --codex-bin codex
 ```
+
+## ライセンスと外部ツール
+
+UtsuroClip本体は [MIT License](LICENSE) で提供します。Codex CLI、VOICEVOX Engine、Manim Community Edition、FFmpegは利用者が別途導入する外部ツールであり、詳細なライセンスと利用上の注意は[第三者通知](THIRD_PARTY_NOTICES.md)を確認してください。
+
+VOICEVOXで生成した音声を公開する際は、選択した話者に対応するクレジット表記が必要です。動画内または説明欄などに、たとえば `VOICEVOX:春日部つむぎ` と記載してください。話者ごとの詳しい条件は[第三者通知](THIRD_PARTY_NOTICES.md#voicevox-generated-audio)から公式規約を確認してください。
