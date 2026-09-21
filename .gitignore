@@ -1,0 +1,41 @@
+# Generated mode-specific Codex configuration and AGENTS file
+.codex/
+.agents/
+AGENTS.md
+
+# Generated video artifacts and Codex logs
+# Ignore any undocumented files or directories generated directly in work/.
+# The documented artifact directories remain visible so their .gitkeep files
+# and the rules below continue to apply.
+work/*
+!work/audio/
+!work/logs/
+!work/rendered/
+!work/research/
+!work/scenes/
+!work/script/
+work/audio/*
+!work/audio/.gitkeep
+work/scenes/*
+!work/scenes/.gitkeep
+work/rendered/*
+!work/rendered/.gitkeep
+work/logs/*
+!work/logs/.gitkeep
+work/research/research.md
+work/research/sources.md
+work/script/script.md
+work/script/title.txt
+output/*
+!output/.gitkeep
+input/request.md
+
+# Ignore the .vscode directory
+.vscode/
+
+# Python build and interpreter artifacts
+__pycache__/
+*.egg-info/
+
+# Ignore virtual environment directories
+.venv/

@@ -1,0 +1,17 @@
+model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
+model_context_window = 1000000
+
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+
+default_permissions = "repo_full"
+
+[permissions.repo_full]
+extends = ":workspace"
+
+[permissions.repo_full.filesystem.":project_roots"]
+".git" = "write"
+
+[permissions.repo_full.network]
+enabled = true
