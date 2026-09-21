@@ -106,11 +106,17 @@ utsuroclip generate input/request.md --speaker ずんだもん
 
 1. 調査を行い、`work/research/research.md` と `work/research/sources.md` を生成する。
 2. 調査結果から `work/script/script.md` を作成する。
-3. VOICEVOX、Manim、FFmpegを使い、`output/video.mp4` を生成する。
+3. VOICEVOX、Manim、FFmpegを使い、`output/YYYYMMDDhhmmss_タイトル.mp4` を生成する。タイトルはCodexが動画内容に合わせて決定する。
 
 実行中は、工程の開始・完了、Codex が実行するコマンド、Web 検索、Codex からの進捗メッセージが端末に表示されます。各工程の終了時とパイプライン全体の終了時には、経過時間と Codex が報告した input / cached input / output / reasoning output トークン数が表示されます。Codex CLI が使用量を返さない場合は `取得不可` と表示されます。
 
 各工程の JSONL 標準出力・標準エラー・最終メッセージは `work/logs/` に保存されます。Codex、VOICEVOX、Manim、FFmpegのどれかが利用できない場合は、必要な工程で停止し、ログに原因を残します。
+
+`work/` に前回の中間成果物が残っている場合、生成前に削除確認を表示します。確認しない場合は生成を中断します。自動実行では、`-y` または `--yes` を指定して確認なしで削除・生成できます。
+
+```bash
+utsuroclip generate input/request.md --yes
+```
 
 Codex CLIの実行ファイルやプロジェクトルートを明示したい場合は、次のオプションを使えます。
 

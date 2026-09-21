@@ -28,6 +28,28 @@ class ProjectPaths:
     def output(self) -> Path:
         return self.root / "output"
 
+    @property
+    def title_file(self) -> Path:
+        return self.work / "script" / "title.txt"
+
+    def intermediate_artifacts(self) -> list[Path]:
+        """Return generated files that would be removed before a new run."""
+        if not self.work.is_dir():
+            return []
+        return sorted(
+            (
+                path
+                for path in self.work.rglob("*")
+                if path.name != ".gitkeep" and (path.is_file() or path.is_symlink())
+            ),
+            key=lambda path: str(path),
+        )
+
+    def clean_intermediate_artifacts(self) -> None:
+        """Remove generated files while retaining workspace directories and .gitkeep."""
+        for path in self.intermediate_artifacts():
+            path.unlink()
+
     def prepare_workspace(self) -> None:
         """Create the documented generated-artifact directories if absent."""
         for directory in (

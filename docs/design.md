@@ -87,7 +87,7 @@ FFmpeg
 ├─ 映像と音声を結合
 └─ 複数シーンを結合
         ↓
-output/video.mp4
+output/YYYYMMDDhhmmss_タイトル.mp4
 ```
 
 ---
@@ -403,7 +403,7 @@ utsuroclip generate input/request.md
 * 調査・台本作成・動画生成処理を開始する
 * 実行結果をユーザーへ表示する
 * 各工程の標準出力・標準エラー・最終メッセージを `work/logs/` に保存する
-* 正常終了前に `output/video.mp4` が生成されていることを確認する
+* 正常終了前に、Codexが生成したタイトルを含む `output/YYYYMMDDhhmmss_タイトル.mp4` が生成されていることを確認する
 
 ---
 
@@ -567,7 +567,7 @@ scene_003.mp4 + scene_003.wav
               ↓
             FFmpeg
               ↓
-       output/video.mp4
+       output/YYYYMMDDhhmmss_タイトル.mp4
 ```
 
 ---
