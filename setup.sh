@@ -13,11 +13,13 @@ copy_directory_contents() {
 
 case "${1:-}" in
     --dev)
+        rm -rf .codex .agents
         cp AGENTS.dev.md AGENTS.md
         copy_directory_contents .codex.dev .codex
         echo "Developer setup completed successfully."
         ;;
     "")
+        rm -rf .codex .agents
         cp AGENTS.user.md AGENTS.md
         copy_directory_contents .codex.user .codex
         copy_directory_contents .agents.user .agents

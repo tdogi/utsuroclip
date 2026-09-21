@@ -17,6 +17,7 @@ work/research/sources.md
 work/script/script.md
 output/*
 !output/.gitkeep
+input/request.md
 
 # Ignore the .vscode directory
 .vscode/
