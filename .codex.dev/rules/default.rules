@@ -1,0 +1,257 @@
+# =============================================================================
+# Project Ankake - Codex execution rules
+# =============================================================================
+#
+# Policy:
+# - Normal development work should remain inside the configured sandbox.
+# - Safe read-only Git/GitHub operations may run without approval.
+# - PR creation/update/merge and CI/CD operations are allowed as part of the
+#   AGENTS.md CI/CD workflow.
+# - Destructive local Git operations require explicit user approval.
+# - Force-push is prohibited.
+#
+# These rules apply when Codex requests execution outside the sandbox.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Read-only Git inspection
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["git", "status"],
+    decision = "allow",
+    justification = "Reading repository status is safe.",
+)
+
+prefix_rule(
+    pattern = ["git", "diff"],
+    decision = "allow",
+    justification = "Reading repository differences is safe.",
+)
+
+prefix_rule(
+    pattern = ["git", "log"],
+    decision = "allow",
+    justification = "Reading Git history is safe.",
+)
+
+prefix_rule(
+    pattern = ["git", "show"],
+    decision = "allow",
+    justification = "Reading Git objects and commit information is safe.",
+)
+
+prefix_rule(
+    pattern = ["git", "rev-parse"],
+    decision = "allow",
+    justification = "Reading repository and revision information is safe.",
+)
+
+prefix_rule(
+    pattern = ["git", "branch", "--show-current"],
+    decision = "allow",
+    justification = "Checking the current branch is required by the Git Safety Rules.",
+)
+
+prefix_rule(
+    pattern = ["git", "branch", "--list"],
+    decision = "allow",
+    justification = "Listing branches is required when determining the working branch.",
+)
+
+prefix_rule(
+    pattern = ["git", "remote", "-v"],
+    decision = "allow",
+    justification = "Reading configured Git remotes is safe.",
+)
+
+prefix_rule(
+    pattern = ["git", "remote", "get-url"],
+    decision = "allow",
+    justification = "Reading a Git remote URL is safe.",
+)
+
+
+# -----------------------------------------------------------------------------
+# GitHub Pull Request inspection
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["gh", "pr", "view"],
+    decision = "allow",
+    justification = "Reading pull request information is safe.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "status"],
+    decision = "allow",
+    justification = "Reading pull request status is safe.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "checks"],
+    decision = "allow",
+    justification = "Monitoring pull request CI checks is part of the CI/CD workflow.",
+)
+
+
+# -----------------------------------------------------------------------------
+# Pull Request creation, update, and merge
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["gh", "pr", "create"],
+    decision = "allow",
+    justification = "Creating a pull request is an expected part of the approved CI/CD workflow.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "edit"],
+    decision = "allow",
+    justification = "Updating an existing pull request is an expected part of the approved CI/CD workflow.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "merge"],
+    decision = "allow",
+    justification = "Merging a pull request is an expected part of the approved deployment workflow after CI succeeds.",
+)
+
+
+# -----------------------------------------------------------------------------
+# GitHub Actions / CI/CD monitoring and control
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["gh", "run", "list"],
+    decision = "allow",
+    justification = "Listing GitHub Actions runs is read-only CI monitoring.",
+)
+
+prefix_rule(
+    pattern = ["gh", "run", "view"],
+    decision = "allow",
+    justification = "Reading GitHub Actions run details and logs is safe.",
+)
+
+prefix_rule(
+    pattern = ["gh", "run", "watch"],
+    decision = "allow",
+    justification = "Waiting for GitHub Actions completion is part of the CI/CD workflow.",
+)
+
+prefix_rule(
+    pattern = ["gh", "run", ["rerun", "cancel", "delete"]],
+    decision = "allow",
+    justification = "Managing GitHub Actions runs is allowed as part of the approved CI/CD workflow.",
+)
+
+prefix_rule(
+    pattern = ["gh", "workflow", "view"],
+    decision = "allow",
+    justification = "Reading workflow information is safe.",
+)
+
+prefix_rule(
+    pattern = ["gh", "workflow", ["run", "enable", "disable"]],
+    decision = "allow",
+    justification = "Managing GitHub Actions workflows is allowed as part of the approved CI/CD workflow.",
+)
+
+
+# -----------------------------------------------------------------------------
+# Destructive Git operations - explicit user approval required
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "prompt",
+    justification = "git reset --hard can permanently discard uncommitted work.",
+)
+
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "prompt",
+    justification = "git clean can permanently delete untracked files.",
+)
+
+prefix_rule(
+    pattern = ["git", "restore"],
+    decision = "prompt",
+    justification = "git restore may discard working-tree changes.",
+)
+
+prefix_rule(
+    pattern = ["git", "checkout", "--"],
+    decision = "prompt",
+    justification = "git checkout -- may discard working-tree changes.",
+)
+
+prefix_rule(
+    pattern = ["git", "branch", ["-d", "-D", "--delete"]],
+    decision = "prompt",
+    justification = "Deleting a Git branch requires explicit user approval.",
+)
+
+
+# -----------------------------------------------------------------------------
+# Force-push - never allowed
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Force-push is prohibited by the repository Git Safety Rules. Use a normal push instead.",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "-f"],
+    decision = "forbidden",
+    justification = "Force-push is prohibited by the repository Git Safety Rules. Use a normal push instead.",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force-with-lease"],
+    decision = "forbidden",
+    justification = "Rewriting remote Git history is prohibited by the repository Git Safety Rules.",
+)
+
+
+# -----------------------------------------------------------------------------
+# Direct push to production branches - never allowed
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["git", "push", "origin", ["main", "master"]],
+    decision = "forbidden",
+    justification = "Direct pushes to the production branch are prohibited. Use a pull request instead.",
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["-u", "--set-upstream"], "origin", ["main", "master"]],
+    decision = "forbidden",
+    justification = "Direct pushes to the production branch are prohibited. Use a pull request instead.",
+)
+
+
+# -----------------------------------------------------------------------------
+# Other high-impact GitHub operations - explicit user approval required
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["gh", "pr", "close"],
+    decision = "prompt",
+    justification = "Closing a pull request changes repository state and requires explicit user approval.",
+)
+
+
+# -----------------------------------------------------------------------------
+# Generic destructive filesystem operation
+# -----------------------------------------------------------------------------
+
+prefix_rule(
+    pattern = ["rm"],
+    decision = "prompt",
+    justification = "File deletion requires explicit user approval when execution outside the sandbox is requested.",
+)

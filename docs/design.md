@@ -133,11 +133,17 @@ utsuroclip/
 ├── AGENTS.dev.md
 ├── AGENTS.user.md
 ├── README.md
+├── setup.sh
 ├── pyproject.toml
 ├── .gitignore
 │
 ├── docs/
 │   └── design.md
+│
+├── .codex.dev/
+│   ├── config.toml
+│   └── rules/
+│       └── default.rules
 │
 ├── .agents/
 │   └── skills/
@@ -189,15 +195,26 @@ utsuroclip/
 
 UtsuroClip自体をCodexで開発するときのルールを定義する。
 
-開発時は `AGENTS.md` として使用する。
-
 #### `AGENTS.user.md`
 
 UtsuroClipを利用して動画を生成するときのルールを定義する。
 
 調査、台本作成、動画生成に関するCodexの基本的な作業ルールを記載する。
 
-動画生成時は `AGENTS.md` として使用する。
+
+#### `setup.sh`
+
+ツールの開発/利用のセットアップを実行するスクリプト。
+
+開発/利用時のAGENTSファイルやCodexの設定ファイルを適切に配置する。
+
+```bash
+# Development Mode
+bash setup --dev
+
+# User Mode
+bash setup
+```
 
 #### `docs/`
 
@@ -208,6 +225,10 @@ UtsuroClipの設計書など、プロジェクトのドキュメントを格納�
 ```text
 docs/design.md
 ```
+
+#### `.codex.dev/`
+
+開発者向けのCodex設定ファイルを格納する
 
 #### `.agents/skills/`
 
@@ -320,12 +341,14 @@ Codex
 
 `AGENTS.md` 自体に両方のルールを持たせず、現在使用するモードのAGENTSファイルをコピーして使用する。
 
+`setup.sh` スクリプトの処理でAGENTSファイルをコピーして配置する。
+
 ```bash
 # Development Mode
-cp AGENTS.dev.md AGENTS.md
+bash setup --dev
 
 # User Mode
-cp AGENTS.user.md AGENTS.md
+bash setup
 ```
 
 ---

@@ -1,0 +1,6 @@
+# Ignore the .codex directory and AGENTS.md file
+.codex/
+AGENTS.md
+
+# Ignore the .vscode directory
+.vscode/
