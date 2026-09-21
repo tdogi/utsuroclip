@@ -35,8 +35,22 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             runner.assert_called_once()
             runner.return_value.run_pipeline.assert_called_once_with(request.resolve())
+            self.assertEqual(runner.call_args.args[2], "春日部つむぎ")
             self.assertTrue((root / "work" / "logs").is_dir())
             self.assertTrue((root / "output").is_dir())
+
+    def test_generate_passes_selected_speaker_to_runner(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            with patch("utsuroclip.cli.CodexRunner") as runner:
+                runner.return_value.run_pipeline.side_effect = lambda _request: (root / "output" / "video.mp4").touch()
+                result = main([
+                    "generate", str(request), "--project-root", str(root), "--speaker", "ずんだもん"
+                ])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(runner.call_args.args[2], "ずんだもん")
 
     def test_generate_requires_final_video(self) -> None:
         with TemporaryDirectory() as temp:

@@ -10,6 +10,10 @@ from .codex import CodexExecutionError, CodexRunner
 from .project import ProjectPaths
 
 
+SPEAKERS = ("ずんだもん", "四国めたん", "春日部つむぎ")
+DEFAULT_SPEAKER = "春日部つむぎ"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="utsuroclip", description="短尺の解説動画を生成します。"
@@ -25,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     generate.add_argument(
         "--codex-bin", default="codex", help="Codex CLI 実行ファイル名またはパス"
+    )
+    generate.add_argument(
+        "--speaker",
+        choices=SPEAKERS,
+        default=DEFAULT_SPEAKER,
+        help=f"ナレーション話者（既定値: {DEFAULT_SPEAKER}）",
     )
     return parser
 
@@ -48,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project.require_assets()
         project.prepare_workspace()
-        CodexRunner(project, args.codex_bin).run_pipeline(request)
+        CodexRunner(project, args.codex_bin, args.speaker).run_pipeline(request)
         final_video = project.output / "video.mp4"
         if not final_video.is_file():
             raise CodexExecutionError(

@@ -522,7 +522,7 @@ Codexが動画を制作する際の演出方針やノウハウを定義する。
 
 VOICEVOX Engine APIを呼び出し、各シーンのナレーション音声を生成する。
 
-`/audio_query` と `/synthesis` を使用し、既定では `http://127.0.0.1:50021` のローカルEngineへ接続する。話者IDとEngine URLはCLI引数で変更できる。
+`/audio_query` と `/synthesis` を使用し、既定では `http://127.0.0.1:50021` のローカルEngineへ接続する。話者はCLI引数で `ずんだもん`、`四国めたん`、`春日部つむぎ` から選択でき、既定は `春日部つむぎ` とする。各話者は通常スタイルのVOICEVOX話者IDへ変換してAPIに渡す。Engine URLもCLI引数で変更できる。
 
 ```text
 ナレーション文章

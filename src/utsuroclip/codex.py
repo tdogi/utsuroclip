@@ -61,6 +61,7 @@ class CodexRunner:
 
     project: ProjectPaths
     executable: str = "codex"
+    speaker: str = "春日部つむぎ"
 
     STAGES = (
         ("research", "research.md"),
@@ -307,12 +308,20 @@ class CodexRunner:
             request_label = request.relative_to(self.project.root)
         except ValueError:
             request_label = request
+        speaker_context = ""
+        if stage == "generate-video":
+            speaker_context = (
+                f"- ナレーション話者: {self.speaker}\n"
+                "- ナレーション話者に指定された名前を "
+                "`python tools/voicevox.py --speaker` へ必ず渡してください。\n"
+            )
         return (
             f"{instructions}\n\n"
             "## 実行コンテキスト\n"
             f"- 現在の工程: {stage}\n"
             f"- プロジェクトルート: {self.project.root}\n"
             f"- 動画概要: {request_label}\n"
+            f"{speaker_context}"
             "- このリポジトリの AGENTS.md と関連 Skill を必ず守ってください。\n"
             "- 指定された成果物を実際に保存し、完了後に保存先と実施内容を簡潔に報告してください。"
         )

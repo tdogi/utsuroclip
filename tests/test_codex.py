@@ -79,6 +79,25 @@ class CodexRunnerTests(unittest.TestCase):
             self.assertIn("input 300", stdout.getvalue())
             self.assertIn("[research] progress", stderr.getvalue())
 
+    def test_includes_selected_speaker_in_video_generation_prompt(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            prompt = CodexRunner(project, speaker="四国めたん")._build_prompt(
+                "generate-video", project.prompts / "generate-video.md", request
+            )
+
+        self.assertIn("ナレーション話者: 四国めたん", prompt)
+        self.assertIn("--speaker", prompt)
+
+    def test_does_not_include_speaker_in_non_video_prompt(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            prompt = CodexRunner(project, speaker="四国めたん")._build_prompt(
+                "research", project.prompts / "research.md", request
+            )
+
+        self.assertNotIn("ナレーション話者", prompt)
+
     def test_stops_after_a_failed_stage(self) -> None:
         with TemporaryDirectory() as temp:
             project, request = self.make_project(Path(temp))

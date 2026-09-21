@@ -33,6 +33,26 @@ class ToolTests(unittest.TestCase):
         self.assertIn("/audio_query?", post.call_args_list[0].args[0])
         self.assertEqual(post.call_args_list[1].args[0], "http://localhost:50021/synthesis?speaker=3")
 
+    def test_voicevox_uses_kasukabe_tsumugi_by_default(self) -> None:
+        with TemporaryDirectory() as temp:
+            output = Path(temp) / "scene.wav"
+            with patch.object(voicevox, "synthesize", return_value=b"WAV") as synthesize:
+                result = voicevox.main(["--text", "こんにちは", "--output", str(output)])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(synthesize.call_args.args[1], 8)
+
+    def test_voicevox_uses_selected_speaker(self) -> None:
+        with TemporaryDirectory() as temp:
+            output = Path(temp) / "scene.wav"
+            with patch.object(voicevox, "synthesize", return_value=b"WAV") as synthesize:
+                result = voicevox.main([
+                    "--text", "こんにちは", "--output", str(output), "--speaker", "四国めたん"
+                ])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(synthesize.call_args.args[1], 2)
+
     def test_ffmpeg_mux_builds_audio_video_command(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)

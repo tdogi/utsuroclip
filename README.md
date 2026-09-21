@@ -96,6 +96,12 @@ bash setup.sh --dev
 utsuroclip generate input/request.md
 ```
 
+ナレーション話者は `ずんだもん`、`四国めたん`、`春日部つむぎ` から選べます。既定値は `春日部つむぎ` です。
+
+```bash
+utsuroclip generate input/request.md --speaker ずんだもん
+```
+
 実行すると以下の順に Codex が起動します。
 
 1. 調査を行い、`work/research/research.md` と `work/research/sources.md` を生成する。

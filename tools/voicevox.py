@@ -12,6 +12,14 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
+SPEAKERS = {
+    "ずんだもん": 3,
+    "四国めたん": 2,
+    "春日部つむぎ": 8,
+}
+DEFAULT_SPEAKER = "春日部つむぎ"
+
+
 def post_json(url: str, payload: bytes = b"") -> bytes:
     headers = {"Content-Type": "application/json"} if payload else {}
     request = Request(url, data=payload, headers=headers, method="POST")
@@ -35,7 +43,12 @@ def main(argv: list[str] | None = None) -> int:
     text_group.add_argument("--text", help="読み上げる文章")
     text_group.add_argument("--text-file", type=Path, help="読み上げる文章を含む UTF-8 テキストファイル")
     parser.add_argument("--output", type=Path, required=True, help="出力 WAV パス")
-    parser.add_argument("--speaker", type=int, default=3, help="VOICEVOX の話者 ID（既定値: 3）")
+    parser.add_argument(
+        "--speaker",
+        choices=SPEAKERS,
+        default=DEFAULT_SPEAKER,
+        help=f"話者（既定値: {DEFAULT_SPEAKER}）",
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:50021", help="VOICEVOX Engine の URL")
     args = parser.parse_args(argv)
 
@@ -43,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     if not text.strip():
         parser.error("読み上げる文章は空にできません")
     try:
-        wav = synthesize(text, args.speaker, args.base_url)
+        wav = synthesize(text, SPEAKERS[args.speaker], args.base_url)
     except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
         print(f"VOICEVOX Engine との通信に失敗しました: {error}", file=sys.stderr)
         return 1
