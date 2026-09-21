@@ -25,6 +25,7 @@ work/logs/*
 work/research/research.md
 work/research/sources.md
 work/script/script.md
+work/script/title.txt
 output/*
 !output/.gitkeep
 input/request.md
