@@ -102,7 +102,9 @@ utsuroclip generate input/request.md
 2. 調査結果から `work/script/script.md` を作成する。
 3. VOICEVOX、Manim、FFmpegを使い、`output/video.mp4` を生成する。
 
-各工程の標準出力・標準エラー・最終メッセージは `work/logs/` に保存されます。Codex、VOICEVOX、Manim、FFmpegのどれかが利用できない場合は、必要な工程で停止し、ログに原因を残します。
+実行中は、工程の開始・完了、Codex が実行するコマンド、Web 検索、Codex からの進捗メッセージが端末に表示されます。各工程の終了時とパイプライン全体の終了時には、経過時間と Codex が報告した input / cached input / output / reasoning output トークン数が表示されます。Codex CLI が使用量を返さない場合は `取得不可` と表示されます。
+
+各工程の JSONL 標準出力・標準エラー・最終メッセージは `work/logs/` に保存されます。Codex、VOICEVOX、Manim、FFmpegのどれかが利用できない場合は、必要な工程で停止し、ログに原因を残します。
 
 Codex CLIの実行ファイルやプロジェクトルートを明示したい場合は、次のオプションを使えます。
 
