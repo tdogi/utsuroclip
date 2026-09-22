@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="utsuroclip-manim-", dir=args.output.parent) as media_dir:
         command = [
             args.manim_bin,
+            "--silent",
             f"-q{args.quality}",
             "--format",
             "mp4",
