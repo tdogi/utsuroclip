@@ -90,8 +90,42 @@ class CodexRunner:
         finally:
             self._print_pipeline_summary(summaries, monotonic() - started_at)
 
-    def _run_stage(self, stage: str, prompt_path: Path, request: Path) -> StageSummary:
-        prompt = self._build_prompt(stage, prompt_path, request)
+    def run_revision(self, instruction: str, target_video: Path) -> None:
+        """Ask Codex to revise the retained production set and render a new video."""
+        if shutil.which(self.executable) is None:
+            raise CodexExecutionError(
+                f"Codex CLI が見つかりません: {self.executable}。README のセットアップ手順を確認してください。"
+            )
+
+        started_at = monotonic()
+        summaries: list[StageSummary] = []
+        try:
+            summaries.append(
+                self._run_stage(
+                    "revise-video",
+                    self.project.prompts / "revise-video.md",
+                    revision_instruction=instruction,
+                    target_video=target_video,
+                )
+            )
+        except CodexExecutionError as error:
+            if error.summary is not None:
+                summaries.append(error.summary)
+            raise
+        finally:
+            self._print_pipeline_summary(summaries, monotonic() - started_at)
+
+    def _run_stage(
+        self,
+        stage: str,
+        prompt_path: Path,
+        request: Path | None = None,
+        revision_instruction: str | None = None,
+        target_video: Path | None = None,
+    ) -> StageSummary:
+        prompt = self._build_prompt(
+            stage, prompt_path, request, revision_instruction, target_video
+        )
         final_message = self.project.logs / f"{stage}.final.md"
         stdout_log = self.project.logs / f"{stage}.stdout.log"
         stderr_log = self.project.logs / f"{stage}.stderr.log"
@@ -102,7 +136,7 @@ class CodexRunner:
             "workspace-write",
             "--json",
         ]
-        if stage == "generate-video":
+        if stage in {"generate-video", "revise-video"}:
             command.extend([
                 "--config",
                 "sandbox_workspace_write.network_access=true",
@@ -302,26 +336,50 @@ class CodexRunner:
         compact = " ".join(value.split())
         return compact if len(compact) <= limit else compact[: limit - 1] + "…"
 
-    def _build_prompt(self, stage: str, prompt_path: Path, request: Path) -> str:
+    def _build_prompt(
+        self,
+        stage: str,
+        prompt_path: Path,
+        request: Path | None = None,
+        revision_instruction: str | None = None,
+        target_video: Path | None = None,
+    ) -> str:
         instructions = prompt_path.read_text(encoding="utf-8").strip()
-        try:
-            request_label = request.relative_to(self.project.root)
-        except ValueError:
-            request_label = request
+        request_context = ""
+        if request is not None:
+            try:
+                request_label = request.relative_to(self.project.root)
+            except ValueError:
+                request_label = request
+            request_context = f"- 動画概要: {request_label}\n"
         speaker_context = ""
-        if stage == "generate-video":
+        if stage in {"generate-video", "revise-video"}:
             speaker_context = (
                 f"- ナレーション話者: {self.speaker}\n"
                 "- ナレーション話者に指定された名前を "
                 "`python tools/voicevox.py --speaker` へ必ず渡してください。\n"
+            )
+        revision_context = ""
+        if revision_instruction is not None or target_video is not None:
+            if revision_instruction is None or target_video is None:  # pragma: no cover
+                raise ValueError("修正工程には指示と対象動画の両方が必要です")
+            try:
+                target_label = target_video.relative_to(self.project.root)
+            except ValueError:
+                target_label = target_video
+            revision_context = (
+                f"- 修正対象の完成動画: {target_label}\n"
+                "- ユーザーの修正指示:\n"
+                f"{revision_instruction}\n"
             )
         return (
             f"{instructions}\n\n"
             "## 実行コンテキスト\n"
             f"- 現在の工程: {stage}\n"
             f"- プロジェクトルート: {self.project.root}\n"
-            f"- 動画概要: {request_label}\n"
+            f"{request_context}"
             f"{speaker_context}"
+            f"{revision_context}"
             "- このリポジトリの AGENTS.md と関連 Skill を必ず守ってください。\n"
             "- 指定された成果物を実際に保存し、完了後に保存先と実施内容を簡潔に報告してください。"
         )

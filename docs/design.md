@@ -168,7 +168,8 @@ utsuroclip/
 ├── prompts/
 │   ├── research.md
 │   ├── write-script.md
-│   └── generate-video.md
+│   ├── generate-video.md
+│   └── revise-video.md
 │
 ├── src/
 │   └── utsuroclip/
@@ -421,6 +422,8 @@ utsuroclip generate input/request.md
 * 前回の `work/` の中間成果物がある場合は削除確認を行い、`-y` / `--yes` 指定時は確認なしで削除する。`output/` の完成動画は削除しない
 * Codex CLIを起動し、調査・台本作成・動画生成処理を開始する
 * `output/video.mp4` と `work/script/title.txt` が生成されたことを確認し、タイトルを安全なファイル名へ変換して `output/YYYYMMDDhhmmss_タイトル.mp4` へ改名する。同名の完成動画は上書きしない
+* 改名した完成動画の相対パスと選択話者を、それぞれ `work/logs/final-video.txt` と `work/logs/speaker.txt` に記録する
+* `revise -p` では上記記録に対応する現在の制作素材だけを対象にCodexへ修正を依頼し、元動画を保持した `元動画名_revised_YYYYMMDDhhmmss.mp4` を出力する
 * 実行結果、工程ごとの進捗、経過時間、Codexが返したトークン使用量を表示する。使用量が得られない場合はその旨を表示する
 
 ---
@@ -448,6 +451,10 @@ Video
 CodexはAGENTS、Prompt、Skill、動画概要、中間生成物を参照し、動画生成に必要な処理を進める。
 
 CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Script、Video Generationをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。いずれかの工程が失敗した場合、後続工程は実行しない。
+
+`revise` は `revise-video` の単独工程としてCodexを起動する。動画生成と同じローカルVOICEVOX接続設定を適用し、対象完成MP4、保持済みの制作素材、ユーザーの修正指示をコンテキストとして渡す。Codexは必要なシーンだけを更新し、一時ファイル `output/video.mp4` を生成する。CLIが存在を確認してから、元動画を上書きしない修正版ファイル名へ変更する。
+
+`revise` の開始時には、`work/` の制作セットと記録済みの対象MP4を一時バックアップする。Codex工程、成果物検証、または修正版保存が失敗した場合、CLIは制作セット・対象記録・対象MP4を復元し、その試行で新規作成されたMP4を削除する。失敗した `revise-video` のログは復元後も残し、原因調査に利用できるようにする。
 
 各工程の JSONL 標準出力、標準エラー、最終メッセージはそれぞれ `work/logs/<stage>.stdout.log`、`work/logs/<stage>.stderr.log`、`work/logs/<stage>.final.md` に保存する。JSONLイベントから取得できる場合は、工程別と合計の input、cached input、output、reasoning output トークン数を表示する。
 
@@ -515,6 +522,17 @@ work/script/title.txt
 * VOICEVOX、Manim、FFmpeg用ツールを利用する
 * 実行コンテキストで指定された話者をVOICEVOXツールへ渡す
 * シーンを結合した一時動画 `output/video.mp4` を生成する（最終的な改名はCLIが行う）
+
+### Video Revision Prompt
+
+`prompts/revise-video.md`
+
+完成済みの動画に対する自然言語の修正指示を、保持済みの制作素材へ反映する処理を定義する。
+
+* 対象MP4、台本、音声、Manimコード、シーン映像から対象箇所を特定する
+* 指示に影響する台本・音声・演出・シーンだけを更新し、影響しない素材は維持する
+* 更新済みシーンを再結合して一時動画 `output/video.mp4` を生成する
+* 対象MP4を削除・上書きしない。CLIが修正版の別名保存を行う
 
 ---
 
@@ -628,6 +646,8 @@ work/
     ├── research.stdout.log
     ├── research.stderr.log
     ├── research.final.md
+    ├── final-video.txt
+    ├── speaker.txt
     └── （各工程ごとの同形式のログ）
 ```
 

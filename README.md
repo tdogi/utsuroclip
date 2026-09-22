@@ -126,6 +126,8 @@ utsuroclip generate input/request.md --speaker ずんだもん
 
 実行中は、工程の開始・完了、Codex が実行するコマンド、Web 検索、Codex からの進捗メッセージが端末に表示されます。各工程の終了時とパイプライン全体の終了時には、経過時間と Codex が報告した input / cached input / output / reasoning output トークン数が表示されます。Codex CLI が使用量を返さない場合は `取得不可` と表示されます。
 
+通常はCodexが一時ファイル `output/video.mp4` を生成し、CLIが最終ファイル名へ変更します。Codexが誤って一時ファイルを別名へ変更した場合でも、その実行で新規作成されたMP4が1本だけなら、`generate` と `revise` のどちらでもCLIが安全に回収して記録します。複数の新規MP4がある場合は対象を推測せずに停止します。
+
 各工程の JSONL 標準出力・標準エラー・最終メッセージは `work/logs/` に保存されます。Codex、VOICEVOX、Manim、FFmpegのどれかが利用できない場合は、必要な工程で停止し、ログに原因を残します。
 
 `work/` に前回の中間成果物が残っている場合、生成前に削除確認を表示します。確認しない場合は生成を中断します。自動実行では、`-y` または `--yes` を指定して確認なしで削除・生成できます。
@@ -138,6 +140,28 @@ Codex CLIの実行ファイルやプロジェクトルートを明示したい�
 
 ```bash
 utsuroclip generate /absolute/path/request.md --project-root /path/to/utsuroclip --codex-bin codex
+```
+
+## 完成動画の修正
+
+最後に `generate` した動画は、対応する制作素材と完成MP4のパスを `work/` に記録します。完成後に台本、文字サイズ・位置、図、特定時間帯の演出などを修正したいときは、自然言語の指示を指定します。
+
+```bash
+utsuroclip revise -p "20秒あたりの波形の図を少し下に移動させて"
+```
+
+`revise` は記録済みの完成動画と `work/` の台本、音声、Manimコード、シーン映像を確認して、修正対象をCodexに特定させます。必要な素材だけを更新・再レンダリングし、元動画を残したまま `元動画名_revised_YYYYMMDDhhmmss.mp4` の形式で `output/` に修正版を保存します。続けて修正する場合は、直前の修正版が対象になります。
+
+`revise` は開始前に制作セットと修正対象MP4を一時バックアップします。Codex工程、成果物検証、保存のいずれかが失敗した場合は、台本・音声・Manimコード・シーン映像・対象記録・対象MP4を修正前の状態へ戻します。失敗した修正で新規作成されたMP4は削除し、`work/logs/revise-video.*` のログは原因調査のため保持します。
+
+新しい `generate` を開始すると `work/` の中間成果物と記録は削除されるため、過去動画を選択して修正することはできません。`work/` の制作素材、記録済みの対象MP4、または必要な依存ツールがない場合、`revise` は失敗して直接MP4を編集しません。
+
+前回失敗した処理の一時ファイル `output/video.mp4` が残っている場合も、誤って修正版として保存しないように停止します。内容を確認したうえで、この一時ファイルを削除してから再実行してください。
+
+Codex CLIまたはプロジェクトルートを明示する場合は、次のように指定できます。
+
+```bash
+utsuroclip revise -p "冒頭の説明をもっと短くして" --project-root /path/to/utsuroclip --codex-bin codex
 ```
 
 ## ライセンスと外部ツール

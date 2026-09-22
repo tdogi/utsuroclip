@@ -98,6 +98,31 @@ class CodexRunnerTests(unittest.TestCase):
 
         self.assertNotIn("ナレーション話者", prompt)
 
+    def test_runs_revision_with_network_access_and_revision_context(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            revise_prompt = project.prompts / "revise-video.md"
+            revise_prompt.write_text("# revise", encoding="utf-8")
+            target = project.output / "20260101000000_topic.mp4"
+            target.touch()
+            events = [{"type": "turn.completed", "usage": {"input_tokens": 10}}]
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
+                "utsuroclip.codex.subprocess.Popen", return_value=FakeCodexProcess(events)
+            ) as popen, redirect_stdout(StringIO()):
+                CodexRunner(project, "fake-codex", "ずんだもん").run_revision(
+                    "文字を大きくして", target
+                )
+
+            self.assertEqual(popen.call_count, 1)
+            command = popen.call_args.args[0]
+            self.assertIn("sandbox_workspace_write.network_access=true", command)
+            self.assertIn("features.network_proxy.enabled=true", command)
+            prompt = command[-1]
+            self.assertIn("修正対象の完成動画: output/20260101000000_topic.mp4", prompt)
+            self.assertIn("ユーザーの修正指示:\n文字を大きくして", prompt)
+            self.assertIn("ナレーション話者: ずんだもん", prompt)
+            self.assertTrue((project.logs / "revise-video.stdout.log").is_file())
+
     def test_stops_after_a_failed_stage(self) -> None:
         with TemporaryDirectory() as temp:
             project, request = self.make_project(Path(temp))
