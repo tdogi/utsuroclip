@@ -11,6 +11,28 @@ import sys
 import tempfile
 
 
+SUPPORTED_MANIM_VERSION = "0.21.0"
+
+
+def require_supported_manim(executable: str) -> str | None:
+    resolved = shutil.which(executable)
+    if resolved is None:
+        print(f"Manim が見つかりません: {executable}", file=sys.stderr)
+        return None
+    result = subprocess.run(
+        [resolved, "--silent", "--version"], text=True, capture_output=True, check=False
+    )
+    version_output = result.stdout + result.stderr
+    if result.returncode != 0 or f"v{SUPPORTED_MANIM_VERSION}" not in version_output:
+        actual = version_output.strip() or "バージョンを取得できませんでした"
+        print(
+            f"対応する Manim Community Edition は v{SUPPORTED_MANIM_VERSION} です: {actual}",
+            file=sys.stderr,
+        )
+        return None
+    return resolved
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Manim シーンを MP4 へレンダリングします")
     parser.add_argument("scene_file", type=Path, help="Manim Python ファイル")
@@ -21,14 +43,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.scene_file.is_file():
         parser.error(f"シーンファイルが見つかりません: {args.scene_file}")
-    if shutil.which(args.manim_bin) is None:
-        print(f"Manim が見つかりません: {args.manim_bin}", file=sys.stderr)
+    manim_bin = require_supported_manim(args.manim_bin)
+    if manim_bin is None:
         return 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="utsuroclip-manim-", dir=args.output.parent) as media_dir:
         command = [
-            args.manim_bin,
+            manim_bin,
             "--silent",
             f"-q{args.quality}",
             "--format",

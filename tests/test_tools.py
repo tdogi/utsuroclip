@@ -22,6 +22,7 @@ def load_tool(module_name: str, filename: str):
 
 voicevox = load_tool("voicevox_tool", "voicevox.py")
 ffmpeg = load_tool("ffmpeg_tool", "ffmpeg.py")
+manim_renderer = load_tool("manim_renderer_tool", "manim_renderer.py")
 
 
 class ToolTests(unittest.TestCase):
@@ -78,3 +79,53 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn("concat", run.call_args.args[0])
+
+    def test_manim_renderer_uses_supported_version_and_silent_mode(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            scene = root / "scene.py"
+            scene.touch()
+            output = root / "rendered" / "scene.mp4"
+
+            def run(command: list[str], **_kwargs: object):
+                if command[-1] == "--version":
+                    return type("Result", (), {
+                        "returncode": 0,
+                        "stdout": "Manim Community v0.21.0\n",
+                        "stderr": "",
+                    })()
+                media_dir = Path(command[command.index("--media_dir") + 1])
+                rendered = media_dir / "videos" / "scene.mp4"
+                rendered.parent.mkdir(parents=True)
+                rendered.touch()
+                return type("Result", (), {"returncode": 0})()
+
+            with patch.object(manim_renderer.shutil, "which", return_value="/bin/manim"), patch.object(
+                manim_renderer.subprocess, "run", side_effect=run
+            ) as run_:
+                result = manim_renderer.main([str(scene), "Scene", "--output", str(output)])
+                self.assertTrue(output.is_file())
+
+        self.assertEqual(result, 0)
+        render_command = run_.call_args_list[1].args[0]
+        self.assertEqual(render_command[0], "/bin/manim")
+        self.assertIn("--silent", render_command)
+
+    def test_manim_renderer_rejects_an_unsupported_version(self) -> None:
+        with TemporaryDirectory() as temp:
+            scene = Path(temp) / "scene.py"
+            scene.touch()
+            result = type("Result", (), {
+                "returncode": 0,
+                "stdout": "Manim Community v0.20.1\n",
+                "stderr": "",
+            })()
+            with patch.object(manim_renderer.shutil, "which", return_value="/bin/manim"), patch.object(
+                manim_renderer.subprocess, "run", return_value=result
+            ) as run_:
+                exit_code = manim_renderer.main([str(scene), "Scene", "--output", str(Path(temp) / "out.mp4")])
+
+        self.assertEqual(exit_code, 1)
+        run_.assert_called_once_with(
+            ["/bin/manim", "--silent", "--version"], text=True, capture_output=True, check=False
+        )

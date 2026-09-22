@@ -10,7 +10,7 @@
    * 意味のまとまりが変わる箇所や、次の説明へ移る箇所には、発話と発話の間へ0.5秒の無音を挿入する。
    * 間はVOICEVOXの句読点による自然なポーズだけに依存せず、音声データ上に指定した長さの無音区間を明示的に挿入する。
    * 各発話音声と無音区間を順番に連結し、最終的なシーン音声を `work/audio/scene_XXX.wav` として生成する。
-3. 各シーンの縦型9:16 Manimコードを `work/scenes/scene_XXX.py` に作成する。対応する `Scene` クラスを `python tools/manim_renderer.py` で `work/rendered/scene_XXX.mp4` にレンダリングする。
+3. 各シーンの縦型9:16 Manimコードを `work/scenes/scene_XXX.py` に作成する。対応する `Scene` クラスを、Manim Community Edition 0.21.0 を実行する `python tools/manim_renderer.py` で `work/rendered/scene_XXX.mp4` にレンダリングする。
    * 映像と字幕のタイミングは、無音区間を含む完成した `work/audio/scene_XXX.wav` を基準として同期させる。
    * ナレーションの発話と発話の間に設けた0.3秒または0.5秒の無音区間を、映像上でも同じ長さの間として確保する。
    * 無音区間では次の字幕や次の説明を先行して表示せず、直前の図や変化を視聴者が確認できる時間として利用する。
@@ -31,4 +31,4 @@
 5. `python tools/ffmpeg.py mux` で各シーンの映像と音声を結合し、`python tools/ffmpeg.py concat` でシーン順に連結して、一時ファイル `output/video.mp4` を生成する。最終ファイル名への変更はCLIだけが行うため、`output/video.mp4` を `mv`、`rename`、削除、または別名保存してはいけない。
 6. 一時出力ファイルが存在することを確認し、シーン数と一時ファイルの場所を報告する。
 
-生成前に、VOICEVOX Engine、Manim、FFmpegが利用できるか確認してください。未導入または実行不能なら、どの依存ツールが不足しているかを明確に報告し、存在しない動画を完成としないでください。
+生成前に、VOICEVOX Engine、Manim Community Edition 0.21.0、FFmpegが利用できるか確認してください。Manimのオンライン照会・依存不足・実行エラーは、代替レンダラー、CLI互換実装、補助スクリプト、依存パッケージの作成または利用で回避してはいけません。`tools/` を作成、変更、削除してはいけません。未導入または実行不能なら、どの依存ツールが不足しているかを明確に報告し、存在しない動画を完成としないでください。

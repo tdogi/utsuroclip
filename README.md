@@ -43,8 +43,8 @@ Manim 公式のOS別依存パッケージ手順を先に満たしたうえで、
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install manim
-manim --version
+python -m pip install "manim==0.21.0"
+manim --version  # Manim Community v0.21.0 と表示されること
 ```
 
 ManimはFFmpegやCairo/Pangoなどのシステム依存を必要とする場合があります。OSごとの追加手順は[公式インストールガイド](https://docs.manim.community/en/stable/installation.html)を参照してください。
