@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from utsuroclip.cli import main, safe_title
+from utsuroclip.cli import CodexExecutionError, main, safe_title
 
 
 class CliTests(unittest.TestCase):
@@ -296,6 +296,38 @@ class CliTests(unittest.TestCase):
             self.assertEqual(
                 (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
                 f"output/{revised[0].name}\n",
+            )
+
+    def test_revise_restores_the_production_set_after_a_failed_revision(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = self.write_revision_artifacts(root)
+            target.write_bytes(b"original video")
+            script = root / "work" / "script" / "script.md"
+            with patch("utsuroclip.cli.CodexRunner") as runner:
+                def fail_after_modifying_artifacts(_prompt: str, _target: Path) -> None:
+                    script.write_text("changed script", encoding="utf-8")
+                    target.write_bytes(b"changed video")
+                    (root / "output" / "video.mp4").write_bytes(b"partial video")
+                    (root / "work" / "logs" / "revise-video.stdout.log").write_text(
+                        "failure details", encoding="utf-8"
+                    )
+                    raise CodexExecutionError("Codex failed")
+
+                runner.return_value.run_revision.side_effect = fail_after_modifying_artifacts
+                result = main(["revise", "-p", "文字を大きくして", "--project-root", str(root)])
+
+            self.assertEqual(result, 1)
+            self.assertEqual(script.read_text(encoding="utf-8"), "script")
+            self.assertEqual(target.read_bytes(), b"original video")
+            self.assertFalse((root / "output" / "video.mp4").exists())
+            self.assertEqual(
+                (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
+                "output/20260101000000_topic.mp4\n",
+            )
+            self.assertEqual(
+                (root / "work" / "logs" / "revise-video.stdout.log").read_text(encoding="utf-8"),
+                "failure details",
             )
 
     def test_revise_rejects_missing_retained_production_assets(self) -> None:

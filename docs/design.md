@@ -454,6 +454,8 @@ CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Scri
 
 `revise` は `revise-video` の単独工程としてCodexを起動する。動画生成と同じローカルVOICEVOX接続設定を適用し、対象完成MP4、保持済みの制作素材、ユーザーの修正指示をコンテキストとして渡す。Codexは必要なシーンだけを更新し、一時ファイル `output/video.mp4` を生成する。CLIが存在を確認してから、元動画を上書きしない修正版ファイル名へ変更する。
 
+`revise` の開始時には、`work/` の制作セットと記録済みの対象MP4を一時バックアップする。Codex工程、成果物検証、または修正版保存が失敗した場合、CLIは制作セット・対象記録・対象MP4を復元し、その試行で新規作成されたMP4を削除する。失敗した `revise-video` のログは復元後も残し、原因調査に利用できるようにする。
+
 各工程の JSONL 標準出力、標準エラー、最終メッセージはそれぞれ `work/logs/<stage>.stdout.log`、`work/logs/<stage>.stderr.log`、`work/logs/<stage>.final.md` に保存する。JSONLイベントから取得できる場合は、工程別と合計の input、cached input、output、reasoning output トークン数を表示する。
 
 映像生成工程でローカルのVOICEVOX Engineを呼び出せるよう、CLIはVideo GenerationのCodex実行時だけ `workspace-write` のネットワークアクセスを有効にし、Codexのネットワークプロキシで `127.0.0.1` だけを許可する。公開インターネットおよび他のローカル宛先は許可しない。既定のVOICEVOX URLは `http://127.0.0.1:50021` とする。

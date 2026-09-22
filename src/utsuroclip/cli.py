@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 import unicodedata
 
 from .codex import CodexExecutionError, CodexRunner
@@ -14,6 +17,44 @@ from .project import ProjectPaths
 
 SPEAKERS = ("ずんだもん", "四国めたん", "春日部つむぎ")
 DEFAULT_SPEAKER = "春日部つむぎ"
+
+
+@dataclass(frozen=True)
+class RevisionBackup:
+    """Temporary backup of the production set changed by one revision."""
+
+    project: ProjectPaths
+    target_video: Path
+    directory: Path
+    previous_videos: set[Path]
+
+    @property
+    def work(self) -> Path:
+        return self.directory / "work"
+
+    @property
+    def target(self) -> Path:
+        return self.directory / "target.mp4"
+
+    def create(self) -> None:
+        shutil.copytree(self.project.work, self.work, symlinks=True)
+        shutil.copy2(self.target_video, self.target)
+
+    def restore(self) -> None:
+        failed_logs = self.directory / "failed-logs"
+        failed_logs.mkdir()
+        for log in self.project.logs.glob("revise-video.*"):
+            if log.is_file():
+                shutil.copy2(log, failed_logs / log.name)
+
+        shutil.rmtree(self.project.work)
+        shutil.copytree(self.work, self.project.work, symlinks=True)
+        shutil.copy2(self.target, self.target_video)
+        for video in self.project.output.glob("*.mp4"):
+            if video.is_file() and video.resolve() not in self.previous_videos:
+                video.unlink()
+        for log in failed_logs.iterdir():
+            shutil.copy2(log, self.project.logs / log.name)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -240,16 +281,46 @@ def revise(args: argparse.Namespace) -> int:
         previous_videos = {
             path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
         }
-        CodexRunner(project, args.codex_bin, speaker).run_revision(args.prompt, target_video)
-        generated_video = generated_video_path(project, previous_videos, "修正版の動画")
-        revised_video = revised_video_path(target_video)
-        if generated_video != revised_video and revised_video.exists():
-            raise CodexExecutionError(
-                f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
+        backup = RevisionBackup(
+            project,
+            target_video,
+            Path(tempfile.mkdtemp(prefix="utsuroclip-revise-")),
+            previous_videos,
+        )
+        try:
+            backup.create()
+        except OSError:
+            shutil.rmtree(backup.directory, ignore_errors=True)
+            raise
+        try:
+            CodexRunner(project, args.codex_bin, speaker).run_revision(args.prompt, target_video)
+            generated_video = generated_video_path(project, previous_videos, "修正版の動画")
+            revised_video = revised_video_path(target_video)
+            if generated_video != revised_video and revised_video.exists():
+                raise CodexExecutionError(
+                    f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
+                )
+            if generated_video != revised_video:
+                generated_video.rename(revised_video)
+            write_video_records(project, revised_video, speaker)
+        except Exception as error:
+            try:
+                backup.restore()
+            except OSError as restore_error:
+                print(
+                    f"修正に失敗しました: {error}。"
+                    f"さらに修正前の制作素材の復元に失敗しました: {restore_error}。"
+                    f"バックアップ: {backup.directory}",
+                    file=sys.stderr,
+                )
+                return 1
+            shutil.rmtree(backup.directory, ignore_errors=True)
+            print(
+                f"修正に失敗しました: {error}。修正前の制作素材を復元しました。",
+                file=sys.stderr,
             )
-        if generated_video != revised_video:
-            generated_video.rename(revised_video)
-        write_video_records(project, revised_video, speaker)
+            return 1
+        shutil.rmtree(backup.directory, ignore_errors=True)
     except (FileNotFoundError, CodexExecutionError, OSError) as error:
         print(f"修正に失敗しました: {error}", file=sys.stderr)
         return 1
