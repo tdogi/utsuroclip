@@ -32,6 +32,16 @@ class ProjectPaths:
     def title_file(self) -> Path:
         return self.work / "script" / "title.txt"
 
+    @property
+    def final_video_record(self) -> Path:
+        """One-line relative path of the video currently backed by ``work/``."""
+        return self.logs / "final-video.txt"
+
+    @property
+    def speaker_record(self) -> Path:
+        """Narration speaker used for the video currently backed by ``work/``."""
+        return self.logs / "speaker.txt"
+
     def intermediate_artifacts(self) -> list[Path]:
         """Return generated files that would be removed before a new run."""
         if not self.work.is_dir():
@@ -74,4 +84,26 @@ class ProjectPaths:
         if missing:
             raise FileNotFoundError(
                 "UtsuroClip のプロンプトが見つかりません: " + ", ".join(missing)
+            )
+
+    def require_revision_assets(self) -> None:
+        """Reject revision when the retained production set is incomplete."""
+        required = [
+            self.prompts / "revise-video.md",
+            self.work / "script" / "script.md",
+            self.final_video_record,
+            self.speaker_record,
+        ]
+        missing = [str(path.relative_to(self.root)) for path in required if not path.is_file()]
+        scene_sets = (
+            (self.work / "audio", "scene_*.wav"),
+            (self.work / "scenes", "scene_*.py"),
+            (self.work / "rendered", "scene_*.mp4"),
+        )
+        for directory, pattern in scene_sets:
+            if not any(directory.glob(pattern)):
+                missing.append(f"{directory.relative_to(self.root)}/{pattern}")
+        if missing:
+            raise FileNotFoundError(
+                "修正に必要な制作素材または記録が見つかりません: " + ", ".join(missing)
             )

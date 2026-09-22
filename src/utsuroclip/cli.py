@@ -44,6 +44,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="中間成果物の削除を確認せずに実行する",
     )
+    revise = subparsers.add_parser("revise", help="完成動画を修正する")
+    revise.add_argument("-p", "--prompt", required=True, help="動画への修正指示")
+    revise.add_argument(
+        "--project-root",
+        type=Path,
+        default=Path.cwd(),
+        help="UtsuroClip プロジェクトのルート（既定値: カレントディレクトリ）",
+    )
+    revise.add_argument(
+        "--codex-bin", default="codex", help="Codex CLI 実行ファイル名またはパス"
+    )
     return parser
 
 
@@ -91,8 +102,86 @@ def final_video_path(project: ProjectPaths) -> Path:
     return project.output / f"{datetime.now():%Y%m%d%H%M%S}_{filename_title}.mp4"
 
 
+def generated_video_path(
+    project: ProjectPaths, previous_videos: set[Path], label: str = "最終動画"
+) -> Path:
+    """Find the video produced by the just-completed Codex generation stage."""
+    temporary_video = project.output / "video.mp4"
+    if temporary_video.is_file():
+        return temporary_video
+
+    new_videos = sorted(
+        (
+            path
+            for path in project.output.glob("*.mp4")
+            if path.is_file() and path.resolve() not in previous_videos
+        ),
+        key=lambda path: path.name,
+    )
+    if len(new_videos) == 1:
+        return new_videos[0]
+    if not new_videos:
+        raise CodexExecutionError(
+            f"Codex は完了しましたが{label}が生成されていません: {temporary_video}"
+        )
+    filenames = ", ".join(path.name for path in new_videos)
+    raise CodexExecutionError(
+        "Codex が一時ファイル以外の動画を複数生成したため、"
+        f"{label}を特定できません: "
+        f"{filenames}"
+    )
+
+
+def revised_video_path(target: Path) -> Path:
+    """Return a distinct, clearly marked output path for a revision."""
+    return target.with_name(f"{target.stem}_revised_{datetime.now():%Y%m%d%H%M%S}.mp4")
+
+
+def write_video_records(project: ProjectPaths, video: Path, speaker: str) -> None:
+    try:
+        relative_video = video.relative_to(project.root)
+    except ValueError as error:  # pragma: no cover - callers always use project.output
+        raise CodexExecutionError(f"完成動画がプロジェクト外にあります: {video}") from error
+    project.final_video_record.write_text(f"{relative_video}\n", encoding="utf-8")
+    project.speaker_record.write_text(f"{speaker}\n", encoding="utf-8")
+
+
+def recorded_video_path(project: ProjectPaths) -> Path:
+    try:
+        recorded = project.final_video_record.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise CodexExecutionError(
+            f"修正対象の動画記録を読み取れません: {project.final_video_record} ({error})"
+        ) from error
+    if not recorded or "\n" in recorded or "\r" in recorded:
+        raise CodexExecutionError("修正対象の動画記録が不正です")
+    candidate = (project.root / recorded).resolve()
+    output_root = project.output.resolve()
+    try:
+        candidate.relative_to(output_root)
+    except ValueError as error:
+        raise CodexExecutionError("修正対象の動画記録は output/ 内を指している必要があります") from error
+    if candidate.suffix.lower() != ".mp4" or not candidate.is_file():
+        raise CodexExecutionError(f"修正対象の完成動画が見つかりません: {candidate}")
+    return candidate
+
+
+def recorded_speaker(project: ProjectPaths) -> str:
+    try:
+        speaker = project.speaker_record.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise CodexExecutionError(
+            f"ナレーション話者の記録を読み取れません: {project.speaker_record} ({error})"
+        ) from error
+    if speaker not in SPEAKERS:
+        raise CodexExecutionError(f"ナレーション話者の記録が不正です: {speaker or '空'}")
+    return speaker
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "revise":
+        return revise(args)
     if args.command != "generate":  # pragma: no cover - argparse guarantees this
         return 2
 
@@ -114,23 +203,58 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         project.clean_intermediate_artifacts()
         project.prepare_workspace()
+        previous_videos = {
+            path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
+        }
         CodexRunner(project, args.codex_bin, args.speaker).run_pipeline(request)
-        temporary_video = project.output / "video.mp4"
-        if not temporary_video.is_file():
-            raise CodexExecutionError(
-                f"Codex は完了しましたが最終動画が生成されていません: {temporary_video}"
-            )
+        generated_video = generated_video_path(project, previous_videos)
         final_video = final_video_path(project)
-        if final_video.exists():
+        if generated_video != final_video and final_video.exists():
             raise CodexExecutionError(
                 f"同名の完成動画が既に存在するため上書きしません: {final_video}"
             )
-        temporary_video.rename(final_video)
+        if generated_video != final_video:
+            generated_video.rename(final_video)
+        write_video_records(project, final_video, args.speaker)
     except (FileNotFoundError, CodexExecutionError, OSError) as error:
         print(f"生成に失敗しました: {error}", file=sys.stderr)
         return 1
 
     print(f"生成完了: {final_video}")
+    print(f"工程ログ: {project.logs}")
+    return 0
+
+
+def revise(args: argparse.Namespace) -> int:
+    project = ProjectPaths(args.project_root.resolve())
+    try:
+        project.require_revision_assets()
+        target_video = recorded_video_path(project)
+        speaker = recorded_speaker(project)
+        temporary_video = project.output / "video.mp4"
+        if temporary_video.exists():
+            raise CodexExecutionError(
+                f"前回の未完了一時動画が残っています: {temporary_video}。"
+                "内容を確認してから削除し、再度実行してください。"
+            )
+        previous_videos = {
+            path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
+        }
+        CodexRunner(project, args.codex_bin, speaker).run_revision(args.prompt, target_video)
+        generated_video = generated_video_path(project, previous_videos, "修正版の動画")
+        revised_video = revised_video_path(target_video)
+        if generated_video != revised_video and revised_video.exists():
+            raise CodexExecutionError(
+                f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
+            )
+        if generated_video != revised_video:
+            generated_video.rename(revised_video)
+        write_video_records(project, revised_video, speaker)
+    except (FileNotFoundError, CodexExecutionError, OSError) as error:
+        print(f"修正に失敗しました: {error}", file=sys.stderr)
+        return 1
+
+    print(f"修正完了: {revised_video}")
     print(f"工程ログ: {project.logs}")
     return 0
 
