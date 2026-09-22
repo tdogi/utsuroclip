@@ -87,6 +87,12 @@ FFmpeg
 ├─ 映像と音声を結合
 └─ 複数シーンを結合
         ↓
+output/video.mp4（一時出力）
+        ↓
+UtsuroClip CLI
+├─ work/script/title.txt を読み込む
+└─ タイトルをファイル名として安全な形式に変換して改名
+        ↓
 output/YYYYMMDDhhmmss_タイトル.mp4
 ```
 
@@ -94,11 +100,13 @@ output/YYYYMMDDhhmmss_タイトル.mp4
 
 ## 5. 入力
 
-動画生成時の入力ファイルは以下とする。
+動画生成時の入力は、コマンド引数で指定する Markdown ファイルとする。標準的な保存先は以下であり、Git管理外とする。
 
 ```text
 input/request.md
 ```
+
+リポジトリには記載例として `input/request.example.md` を含む。必要に応じてこれを `input/request.md` としてコピー・編集するか、任意のパスの Markdown ファイルを指定する。
 
 ユーザーは完成した台本を書く必要はなく、作りたい動画の概要を記載する。
 
@@ -134,6 +142,8 @@ input/request.md
 utsuroclip/
 ├── AGENTS.dev.md
 ├── AGENTS.user.md
+├── LICENSE
+├── THIRD_PARTY_NOTICES.md
 ├── README.md
 ├── setup.sh
 ├── pyproject.toml
@@ -164,7 +174,8 @@ utsuroclip/
 │   └── utsuroclip/
 │       ├── __init__.py
 │       ├── cli.py
-│       └── codex.py
+│       ├── codex.py
+│       └── project.py
 │
 ├── tools/
 │   ├── voicevox.py
@@ -172,26 +183,31 @@ utsuroclip/
 │   └── ffmpeg.py
 │
 ├── input/
-│   └── request.md
+│   └── request.example.md
 │
 ├── work/
 │   ├── research/
-│   │   ├── research.md
-│   │   └── sources.md
+│   │   └── .gitkeep
 │   │
 │   ├── script/
-│   │   └── script.md
+│   │   └── .gitkeep
 │   │
-│   ├── audio/
-│   ├── scenes/
-│   ├── rendered/
-│   └── logs/
+│   ├── audio/.gitkeep
+│   ├── scenes/.gitkeep
+│   ├── rendered/.gitkeep
+│   └── logs/.gitkeep
 │
 ├── output/
 │   └── .gitkeep
 │
-└── examples/
-    └── sample-request.md
+├── tests/
+│   ├── test_cli.py
+│   ├── test_codex.py
+│   ├── test_setup.py
+│   └── test_tools.py
+│
+└── .github/workflows/
+    └── tests.yml
 ```
 
 ### 各ディレクトリ・ファイルの役割
@@ -213,7 +229,7 @@ UtsuroClipを利用して動画を生成するときのルールを定義する�
 
 開発/利用時のAGENTSファイルやCodexの設定ファイルを適切に配置する。
 
-通常モードでは `AGENTS.user.md` を `AGENTS.md` へ、`.codex.user/` を `.codex/` へ、`.agents.user/` を `.agents/` へコピーする。開発モードでは `AGENTS.dev.md` と `.codex.dev/` を配置する。同名ファイルは上書きされるため、利用者は必要に応じて独自設定を退避する。
+通常モードでは `AGENTS.user.md` を `AGENTS.md` へ、`.codex.user/` を `.codex/` へ、`.agents.user/` を `.agents/` へコピーする。開発モードでは `AGENTS.dev.md` と `.codex.dev/` を配置する。実行前に生成済みの `.codex/` と `.agents/` を削除し、`AGENTS.md` はコピーで上書きするため、利用者は必要に応じて独自設定を退避する。
 
 ```bash
 # Development Mode
@@ -266,7 +282,7 @@ generate-video.md
 
 #### `src/utsuroclip/`
 
-UtsuroClip本体のCLI処理とCodex CLI呼び出し処理を格納する。
+UtsuroClip本体を格納する。`cli.py` はコマンドライン処理、`codex.py` はCodex CLIの逐次実行とログ・進捗表示、`project.py` はプロジェクト内のパス管理と中間成果物の準備・削除を担う。
 
 #### `tools/`
 
@@ -274,7 +290,7 @@ VOICEVOX、Manim、FFmpegを操作する処理を格納する。
 
 #### `input/`
 
-ユーザーが作りたい動画の概要を記載したMarkdownファイルを格納する。
+ユーザーが作りたい動画の概要を記載したMarkdownファイルを格納する。`request.example.md` は記載例であり、実行時の既定例ではない。
 
 #### `work/research/`
 
@@ -282,7 +298,7 @@ Codexによる調査結果と、その情報源を格納する。
 
 #### `work/script/`
 
-調査結果をもとにCodexが生成した動画台本を格納する。
+調査結果をもとにCodexが生成した動画台本 `script.md` と、最終ファイル名に用いるタイトル `title.txt` を格納する。
 
 #### `work/audio/`
 
@@ -298,15 +314,15 @@ Manimでレンダリングしたシーン動画を格納する。
 
 #### `work/logs/`
 
-動画生成中のログを格納する。
+動画生成中のログを格納する。工程ごとに JSONL 標準出力、標準エラー、Codexの最終メッセージを保存する。
 
 #### `output/`
 
 完成した動画を格納する。
 
-#### `examples/`
+#### `tests/`
 
-動画概要のサンプルを格納する。
+CLI、Codex Runner、セットアップ、外部ツール呼び出しを検証する自動テストを格納する。
 
 ---
 
@@ -352,6 +368,8 @@ Codex
 
 `setup.sh` スクリプトの処理でAGENTSファイルをコピーして配置する。
 
+`AGENTS.md`、`.codex/`、`.agents/` は生成物であり、Git管理しない。
+
 ```bash
 # Development Mode
 bash setup.sh --dev
@@ -387,7 +405,7 @@ prompts/
 
 `src/utsuroclip/cli.py`
 
-ユーザーからのCLI操作を受け付ける。
+ユーザーからのCLI操作を受け付ける。動画生成前に `bash setup.sh` でUser Modeの設定を配置しておく。
 
 想定コマンド：
 
@@ -397,13 +415,13 @@ utsuroclip generate input/request.md
 
 主な役割：
 
-* 動画概要ファイルを受け取る
-* User ModeのAGENTS設定を使用する
-* Codex CLIを起動する
-* 調査・台本作成・動画生成処理を開始する
-* 実行結果をユーザーへ表示する
-* 各工程の標準出力・標準エラー・最終メッセージを `work/logs/` に保存する
-* 正常終了前に、Codexが生成したタイトルを含む `output/YYYYMMDDhhmmss_タイトル.mp4` が生成されていることを確認する
+* `.md` または `.markdown` の動画概要ファイルを受け取る
+* `--speaker` で `ずんだもん`、`四国めたん`、`春日部つむぎ` を選択する（既定値は `春日部つむぎ`）
+* `--project-root` と `--codex-bin` でプロジェクトルートとCodex CLI実行ファイルを指定できる
+* 前回の `work/` の中間成果物がある場合は削除確認を行い、`-y` / `--yes` 指定時は確認なしで削除する。`output/` の完成動画は削除しない
+* Codex CLIを起動し、調査・台本作成・動画生成処理を開始する
+* `output/video.mp4` と `work/script/title.txt` が生成されたことを確認し、タイトルを安全なファイル名へ変換して `output/YYYYMMDDhhmmss_タイトル.mp4` へ改名する。同名の完成動画は上書きしない
+* 実行結果、工程ごとの進捗、経過時間、Codexが返したトークン使用量を表示する。使用量が得られない場合はその旨を表示する
 
 ---
 
@@ -429,7 +447,9 @@ Video
 
 CodexはAGENTS、Prompt、Skill、動画概要、中間生成物を参照し、動画生成に必要な処理を進める。
 
-CLIは `codex exec --sandbox workspace-write` を使い、Research、Script、Video Generationをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。いずれかの工程が失敗した場合、後続工程は実行しない。
+CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Script、Video Generationをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。いずれかの工程が失敗した場合、後続工程は実行しない。
+
+各工程の JSONL 標準出力、標準エラー、最終メッセージはそれぞれ `work/logs/<stage>.stdout.log`、`work/logs/<stage>.stderr.log`、`work/logs/<stage>.final.md` に保存する。JSONLイベントから取得できる場合は、工程別と合計の input、cached input、output、reasoning output トークン数を表示する。
 
 映像生成工程でローカルのVOICEVOX Engineを呼び出せるよう、CLIはVideo GenerationのCodex実行時だけ `workspace-write` のネットワークアクセスを有効にし、Codexのネットワークプロキシで `127.0.0.1` だけを許可する。公開インターネットおよび他のローカル宛先は許可しない。既定のVOICEVOX URLは `http://127.0.0.1:50021` とする。
 
@@ -449,8 +469,8 @@ CLIは `codex exec --sandbox workspace-write` を使い、Research、Script、Vi
 * 可能な限り一次情報や信頼性の高い情報源を優先する
 * 重要な情報を必要に応じて複数の情報源で確認する
 * 確認できた情報と不確実な情報を区別する
-* 調査結果を `research.md` に保存する
-* 使用した情報源を `sources.md` に保存する
+* 調査結果を `work/research/research.md` に保存する
+* 使用した情報源を `work/research/sources.md` に保存する
 
 ---
 
@@ -470,6 +490,7 @@ sources.md
 Codex
         ↓
 work/script/script.md
+work/script/title.txt
 ```
 
 台本では、調査によって確認された情報を基本として使用する。
@@ -492,7 +513,8 @@ work/script/script.md
 * 各シーンの視覚表現を設計する
 * Manimコードを生成する
 * VOICEVOX、Manim、FFmpeg用ツールを利用する
-* 最終動画を生成する
+* 実行コンテキストで指定された話者をVOICEVOXツールへ渡す
+* シーンを結合した一時動画 `output/video.mp4` を生成する（最終的な改名はCLIが行う）
 
 ---
 
@@ -567,6 +589,10 @@ scene_003.mp4 + scene_003.wav
               ↓
             FFmpeg
               ↓
+             output/video.mp4
+                    ↓
+             UtsuroClip CLI
+                    ↓
        output/YYYYMMDDhhmmss_タイトル.mp4
 ```
 
@@ -583,7 +609,8 @@ work/
 │   └── sources.md
 │
 ├── script/
-│   └── script.md
+│   ├── script.md
+│   └── title.txt
 │
 ├── audio/
 │   ├── scene_001.wav
@@ -598,6 +625,10 @@ work/
 │   └── scene_002.mp4
 │
 └── logs/
+    ├── research.stdout.log
+    ├── research.stderr.log
+    ├── research.final.md
+    └── （各工程ごとの同形式のログ）
 ```
 
 ### research.md
@@ -626,6 +657,10 @@ work/
 `research.md` と `sources.md` をもとにCodexが作成した動画台本を保存する。
 
 原則として、調査によって確認できていない事実を台本へ追加しない。
+
+### title.txt
+
+台本工程で生成する、完成動画のファイル名に用いる短いタイトルを1行で保存する。CLIは改行・制御文字を含むタイトルを拒否し、ファイル名に使用できない文字を置換してから最終MP4名に利用する。
 
 ---
 
