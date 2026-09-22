@@ -12,7 +12,7 @@ import tempfile
 import unicodedata
 
 from .codex import CodexExecutionError, CodexRunner
-from .project import ProjectPaths
+from .project import ProjectPaths, ProjectStateError
 
 
 SPEAKERS = ("ずんだもん", "四国めたん", "春日部つむぎ")
@@ -247,7 +247,11 @@ def main(argv: list[str] | None = None) -> int:
         previous_videos = {
             path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
         }
-        CodexRunner(project, args.codex_bin, args.speaker).run_pipeline(request)
+        tools_before = project.tools_snapshot()
+        try:
+            CodexRunner(project, args.codex_bin, args.speaker).run_pipeline(request)
+        finally:
+            project.require_tools_unchanged(tools_before)
         generated_video = generated_video_path(project, previous_videos)
         final_video = final_video_path(project)
         if generated_video != final_video and final_video.exists():
@@ -257,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         if generated_video != final_video:
             generated_video.rename(final_video)
         write_video_records(project, final_video, args.speaker)
-    except (FileNotFoundError, CodexExecutionError, OSError) as error:
+    except (FileNotFoundError, CodexExecutionError, OSError, ProjectStateError) as error:
         print(f"生成に失敗しました: {error}", file=sys.stderr)
         return 1
 
@@ -293,7 +297,11 @@ def revise(args: argparse.Namespace) -> int:
             shutil.rmtree(backup.directory, ignore_errors=True)
             raise
         try:
-            CodexRunner(project, args.codex_bin, speaker).run_revision(args.prompt, target_video)
+            tools_before = project.tools_snapshot()
+            try:
+                CodexRunner(project, args.codex_bin, speaker).run_revision(args.prompt, target_video)
+            finally:
+                project.require_tools_unchanged(tools_before)
             generated_video = generated_video_path(project, previous_videos, "修正版の動画")
             revised_video = revised_video_path(target_video)
             if generated_video != revised_video and revised_video.exists():
@@ -321,7 +329,7 @@ def revise(args: argparse.Namespace) -> int:
             )
             return 1
         shutil.rmtree(backup.directory, ignore_errors=True)
-    except (FileNotFoundError, CodexExecutionError, OSError) as error:
+    except (FileNotFoundError, CodexExecutionError, OSError, ProjectStateError) as error:
         print(f"修正に失敗しました: {error}", file=sys.stderr)
         return 1
 

@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
+
+
+class ProjectStateError(RuntimeError):
+    """Raised when a Codex run changes files outside its allowed artifacts."""
 
 
 @dataclass(frozen=True)
@@ -106,4 +111,32 @@ class ProjectPaths:
         if missing:
             raise FileNotFoundError(
                 "修正に必要な制作素材または記録が見つかりません: " + ", ".join(missing)
+            )
+
+    def tools_snapshot(self) -> dict[Path, str]:
+        """Return a content-aware snapshot of the tools supplied by UtsuroClip."""
+        tools = self.root / "tools"
+        if not tools.is_dir():
+            return {}
+        snapshot: dict[Path, str] = {}
+        for path in sorted(tools.rglob("*")):
+            relative = path.relative_to(self.root)
+            if path.is_dir():
+                snapshot[relative] = "directory"
+            elif path.is_symlink():
+                snapshot[relative] = f"symlink:{path.readlink()}"
+            elif path.is_file():
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                snapshot[relative] = f"file:{digest}"
+        return snapshot
+
+    def require_tools_unchanged(self, before: dict[Path, str]) -> None:
+        """Reject a Codex run that changed supplied tools instead of making artifacts."""
+        after = self.tools_snapshot()
+        changed = sorted(set(before) | set(after))
+        changed = [path for path in changed if before.get(path) != after.get(path)]
+        if changed:
+            names = ", ".join(str(path) for path in changed)
+            raise ProjectStateError(
+                "Codex が許可されていない tools/ の変更を行いました: " + names
             )

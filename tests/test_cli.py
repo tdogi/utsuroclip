@@ -227,6 +227,25 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(result, 1)
 
+    def test_generate_rejects_a_tool_created_by_codex(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            tools = root / "tools"
+            tools.mkdir()
+            (tools / "manim_renderer.py").write_text("renderer", encoding="utf-8")
+
+            def create_helper(_request: Path) -> None:
+                (tools / "manim_local.py").write_text("helper", encoding="utf-8")
+                self.write_generated_artifacts(root)
+
+            with patch("utsuroclip.cli.CodexRunner") as runner:
+                runner.return_value.run_pipeline.side_effect = create_helper
+                result = main(["generate", str(request), "--project-root", str(root)])
+
+            self.assertEqual(result, 1)
+            self.assertTrue((tools / "manim_local.py").is_file())
+
     def test_safe_title_replaces_unsafe_filename_characters(self) -> None:
         self.assertEqual(safe_title(" 空/青:なぜ？ "), "空_青_なぜ")
 
@@ -297,6 +316,25 @@ class CliTests(unittest.TestCase):
                 (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
                 f"output/{revised[0].name}\n",
             )
+
+    def test_revise_rejects_a_tool_created_by_codex(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_revision_artifacts(root)
+            tools = root / "tools"
+            tools.mkdir()
+            (tools / "manim_renderer.py").write_text("renderer", encoding="utf-8")
+
+            def create_helper(_prompt: str, _target: Path) -> None:
+                (tools / "manim_local.py").write_text("helper", encoding="utf-8")
+                (root / "output" / "video.mp4").touch()
+
+            with patch("utsuroclip.cli.CodexRunner") as runner:
+                runner.return_value.run_revision.side_effect = create_helper
+                result = main(["revise", "-p", "文字を大きくして", "--project-root", str(root)])
+
+            self.assertEqual(result, 1)
+            self.assertTrue((tools / "manim_local.py").is_file())
 
     def test_revise_restores_the_production_set_after_a_failed_revision(self) -> None:
         with TemporaryDirectory() as temp:

@@ -4,8 +4,8 @@
 
 1. `work/script/script.md`、`work/scenes/`、`work/audio/`、`work/rendered/`、および対象MP4を確認し、修正指示に対応するシーン・時間帯・要素を特定する。不明確な指示は、既存の構成をなるべく維持する妥当な解釈で処理する。
 2. 影響する制作素材だけを修正する。ナレーション内容を変更する場合は台本と対応する音声を更新し、視覚表現・文字・配置・演出を変更する場合は対応するManimコードとシーン映像を更新する。影響しないシーンは維持する。
-3. 更新したシーンは `python tools/manim_renderer.py` で再レンダリングし、必要に応じて `python tools/voicevox.py --speaker <実行コンテキストで指定された話者>` で音声を再生成する。映像または音声を更新した各シーンは `python tools/ffmpeg.py mux` で映像と音声を再結合する。
+3. 更新したシーンは、Manim Community Edition 0.21.0 を実行する `python tools/manim_renderer.py` で再レンダリングし、必要に応じて `python tools/voicevox.py --speaker <実行コンテキストで指定された話者>` で音声を再生成する。映像または音声を更新した各シーンは `python tools/ffmpeg.py mux` で映像と音声を再結合する。
 4. すべてのシーンを正しい順序で `python tools/ffmpeg.py concat` により連結し、一時ファイル `output/video.mp4` を生成する。対象の完成MP4を削除・上書きしてはいけない。修正版の最終ファイル名への変更はCLIだけが行うため、`output/video.mp4` を `mv`、`rename`、削除、または別名保存してはいけない。
 5. 一時出力ファイルが存在することを確認し、特定した修正箇所、更新した素材、シーン数、一時ファイルの場所を報告する。
 
-生成前に、修正に必要なVOICEVOX Engine、Manim、FFmpegが利用できるか確認してください。依存ツールが不足している場合は、どのツールが必要かを明確に報告し、存在しない動画を完成としないでください。
+生成前に、修正に必要なVOICEVOX Engine、Manim Community Edition 0.21.0、FFmpegが利用できるか確認してください。Manimのオンライン照会・依存不足・実行エラーは、代替レンダラー、CLI互換実装、補助スクリプト、依存パッケージの作成または利用で回避してはいけません。`tools/` を作成、変更、削除してはいけません。依存ツールが不足している場合は、どのツールが必要かを明確に報告し、存在しない動画を完成としないでください。
