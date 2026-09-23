@@ -14,7 +14,7 @@ from utsuroclip.cli import CodexExecutionError, main, safe_title
 
 class CliTests(unittest.TestCase):
     def make_project(self, directory: Path) -> Path:
-        for name in ("research.md", "write-script.md", "generate-video.md"):
+        for name in ("research.md", "write-script.md", "generate-video.md", "self-check-video.md"):
             path = directory / "prompts" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("instructions", encoding="utf-8")
@@ -62,6 +62,7 @@ class CliTests(unittest.TestCase):
         revise_prompt = root / "prompts" / "revise-video.md"
         revise_prompt.parent.mkdir(parents=True, exist_ok=True)
         revise_prompt.write_text("instructions", encoding="utf-8")
+        (root / "prompts" / "self-check-video.md").write_text("instructions", encoding="utf-8")
         return video
 
     def test_generate_prepares_workspace_and_runs_runner(self) -> None:
@@ -366,6 +367,33 @@ class CliTests(unittest.TestCase):
             self.assertEqual(
                 (root / "work" / "logs" / "revise-video.stdout.log").read_text(encoding="utf-8"),
                 "failure details",
+            )
+
+    def test_revise_restores_artifacts_after_failed_self_check_and_keeps_logs(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = self.write_revision_artifacts(root)
+            script = root / "work" / "script" / "script.md"
+
+            def fail_in_self_check(_prompt: str, _target: Path) -> None:
+                script.write_text("changed script", encoding="utf-8")
+                (root / "work" / "logs" / "self-check-video.stderr.log").write_text(
+                    "self-check failed", encoding="utf-8"
+                )
+                (root / "output" / "video.mp4").touch()
+                raise CodexExecutionError("self-check failed")
+
+            with patch("utsuroclip.cli.CodexRunner") as runner:
+                runner.return_value.run_revision.side_effect = fail_in_self_check
+                result = main(["revise", "-p", "文字を大きくして", "--project-root", str(root)])
+
+            self.assertEqual(result, 1)
+            self.assertEqual(script.read_text(encoding="utf-8"), "script")
+            self.assertTrue(target.is_file())
+            self.assertFalse((root / "output" / "video.mp4").exists())
+            self.assertEqual(
+                (root / "work" / "logs" / "self-check-video.stderr.log").read_text(encoding="utf-8"),
+                "self-check failed",
             )
 
     def test_revise_rejects_missing_retained_production_assets(self) -> None:

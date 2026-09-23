@@ -83,6 +83,10 @@ VOICEVOX
 Manim
 → シーン映像生成
         ↓
+Codex
+├─ レンダリング結果をセルフチェック
+└─ 必要なシーンを修正・再レンダリング
+        ↓
 FFmpeg
 ├─ 映像と音声を結合
 └─ 複数シーンを結合
@@ -169,6 +173,7 @@ utsuroclip/
 │   ├── research.md
 │   ├── write-script.md
 │   ├── generate-video.md
+│   ├── self-check-video.md
 │   └── revise-video.md
 │
 ├── src/
@@ -278,7 +283,13 @@ write-script.md
 → 調査結果をもとに台本作成
 
 generate-video.md
-→ 台本から動画生成
+→ 台本から音声とシーン映像を生成
+
+self-check-video.md
+→ レンダリング結果を確認・修正し、確認後に動画を結合
+
+revise-video.md
+→ 既存の制作素材を修正・再レンダリング
 ```
 
 #### `src/utsuroclip/`
@@ -446,19 +457,21 @@ Research
 Script
 ↓
 Video
+↓
+Self Check
 ```
 
 CodexはAGENTS、Prompt、Skill、動画概要、中間生成物を参照し、動画生成に必要な処理を進める。
 
-CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Script、Video Generationをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。いずれかの工程が失敗した場合、後続工程は実行しない。
+CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Script、Video Generation、Self Checkをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。いずれかの工程が失敗した場合、後続工程は実行しない。
 
-`revise` は `revise-video` の単独工程としてCodexを起動する。動画生成と同じローカルVOICEVOX接続設定を適用し、対象完成MP4、保持済みの制作素材、ユーザーの修正指示をコンテキストとして渡す。Codexは必要なシーンだけを更新し、一時ファイル `output/video.mp4` を生成する。CLIが存在を確認してから、元動画を上書きしない修正版ファイル名へ変更する。
+`revise` は `revise-video` と `self-check-video` を順番に起動する。動画生成と同じローカルVOICEVOX接続設定を適用し、対象完成MP4、保持済みの制作素材、ユーザーの修正指示をコンテキストとして渡す。Codexは必要なシーンだけを更新・再レンダリングする。セルフチェックで全シーンを確認し、問題があれば修正・再レンダリングしてから一時ファイル `output/video.mp4` を生成する。CLIが存在を確認してから、元動画を上書きしない修正版ファイル名へ変更する。
 
-`revise` の開始時には、`work/` の制作セットと記録済みの対象MP4を一時バックアップする。Codex工程、成果物検証、または修正版保存が失敗した場合、CLIは制作セット・対象記録・対象MP4を復元し、その試行で新規作成されたMP4を削除する。失敗した `revise-video` のログは復元後も残し、原因調査に利用できるようにする。
+`revise` の開始時には、`work/` の制作セットと記録済みの対象MP4を一時バックアップする。Codex工程、成果物検証、または修正版保存が失敗した場合、CLIは制作セット・対象記録・対象MP4を復元し、その試行で新規作成されたMP4を削除する。失敗した `revise-video` と `self-check-video` のログは復元後も残し、原因調査に利用できるようにする。
 
 各工程の JSONL 標準出力、標準エラー、最終メッセージはそれぞれ `work/logs/<stage>.stdout.log`、`work/logs/<stage>.stderr.log`、`work/logs/<stage>.final.md` に保存する。JSONLイベントから取得できる場合は、工程別と合計の input、cached input、output、reasoning output トークン数を表示する。
 
-映像生成工程でローカルのVOICEVOX Engineを呼び出せるよう、CLIはVideo GenerationのCodex実行時だけ `workspace-write` のネットワークアクセスを有効にし、Codexのネットワークプロキシで `127.0.0.1` だけを許可する。公開インターネットおよび他のローカル宛先は許可しない。既定のVOICEVOX URLは `http://127.0.0.1:50021` とする。
+映像生成・修正・セルフチェック工程でローカルのVOICEVOX Engineを呼び出せるよう、CLIはこれらのCodex実行時だけ `workspace-write` のネットワークアクセスを有効にし、Codexのネットワークプロキシで `127.0.0.1` だけを許可する。公開インターネットおよび他のローカル宛先は許可しない。既定のVOICEVOX URLは `http://127.0.0.1:50021` とする。
 
 ---
 
@@ -510,7 +523,7 @@ work/script/title.txt
 
 `prompts/generate-video.md`
 
-完成した台本から動画を生成する処理を定義する。
+完成した台本から各シーンの音声と映像を生成する処理を定義する。
 
 主な内容：
 
@@ -519,9 +532,19 @@ work/script/title.txt
 * 台本をシーンに分割する
 * 各シーンの視覚表現を設計する
 * Manimコードを生成する
-* VOICEVOX、Manim、FFmpeg用ツールを利用する
+* VOICEVOX、Manim用ツールを利用する
 * 実行コンテキストで指定された話者をVOICEVOXツールへ渡す
-* シーンを結合した一時動画 `output/video.mp4` を生成する（最終的な改名はCLIが行う）
+* 各シーンの音声とレンダリング済み映像を保存する
+
+### Video Self Check Prompt
+
+`prompts/self-check-video.md`
+
+生成と修正に共通するセルフチェック工程を定義する。
+
+* レンダリング結果、字幕と音声の同期、シーン間のつながりを確認する
+* 問題のあるシーンを修正・再レンダリングして再確認する
+* 全シーンに問題がないことを確認してからFFmpegで結合し、一時動画 `output/video.mp4` を生成する（最終的な改名はCLIが行う）
 
 ### Video Revision Prompt
 
@@ -531,7 +554,7 @@ work/script/title.txt
 
 * 対象MP4、台本、音声、Manimコード、シーン映像から対象箇所を特定する
 * 指示に影響する台本・音声・演出・シーンだけを更新し、影響しない素材は維持する
-* 更新済みシーンを再結合して一時動画 `output/video.mp4` を生成する
+* 更新したシーンを再レンダリングし、結合はセルフチェック工程に任せる
 * 対象MP4を削除・上書きしない。CLIが修正版の別名保存を行う
 
 ---
