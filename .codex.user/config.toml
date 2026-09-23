@@ -1,6 +1,6 @@
 # UtsuroClip の動画生成用 Codex 設定。
 # setup.sh の通常モードで .codex/config.toml に配置されます。
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 model_context_window = 1000000
 
