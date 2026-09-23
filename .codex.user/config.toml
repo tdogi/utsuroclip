@@ -1,20 +1,21 @@
 # UtsuroClip の動画生成用 Codex 設定。
-# setup.sh の通常モードで .codex/config.toml に配置されます。
-model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
+model = "gpt-6-sol"
+model_reasoning_effort = "high"
 model_context_window = 1000000
 
 approval_policy = "on-request"
 
+default_permissions = "workspace_write"
+
 [permissions.workspace_write]
 extends = ":workspace"
 
-[permissions.workspace_write.filesystem.":project_roots"]
+[permissions.workspace_write.filesystem.":workspace_roots"]
 ".git" = "write"
 
-# VOICEVOX Engine のローカル API だけを利用できるようにする。
-[sandbox_workspace_write]
-network_access = true
+[permissions.workspace_write.network]
+enabled = true
+allow_local_binding = true
 
 [features.network_proxy]
 enabled = true
