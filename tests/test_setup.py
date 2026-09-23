@@ -31,7 +31,9 @@ class SetupTests(unittest.TestCase):
             config_path = root / ".codex" / "config.toml"
             self.assertTrue(config_path.is_file())
             config = tomllib.loads(config_path.read_text(encoding="utf-8"))
-            self.assertTrue(config["sandbox_workspace_write"]["network_access"])
+            self.assertEqual(config["default_permissions"], "workspace_write")
+            self.assertTrue(config["permissions"]["workspace_write"]["network"]["enabled"])
+            self.assertTrue(config["permissions"]["workspace_write"]["network"]["allow_local_binding"])
             self.assertTrue(config["features"]["network_proxy"]["enabled"])
             self.assertEqual(config["features"]["network_proxy"]["domains"], {"127.0.0.1": "allow"})
             self.assertTrue((root / ".agents" / "skills" / "video-generation" / "SKILL.md").is_file())
