@@ -57,7 +57,7 @@ class CodexExecutionError(RuntimeError):
 
 @dataclass(frozen=True)
 class CodexRunner:
-    """Run the three artifact-producing stages through ``codex exec``."""
+    """Run artifact-producing and self-check stages through ``codex exec``."""
 
     project: ProjectPaths
     executable: str = "codex"
@@ -67,6 +67,7 @@ class CodexRunner:
         ("research", "research.md"),
         ("write-script", "write-script.md"),
         ("generate-video", "generate-video.md"),
+        ("self-check-video", "self-check-video.md"),
     )
 
     def run_pipeline(self, request: Path) -> None:
@@ -108,6 +109,14 @@ class CodexRunner:
                     target_video=target_video,
                 )
             )
+            summaries.append(
+                self._run_stage(
+                    "self-check-video",
+                    self.project.prompts / "self-check-video.md",
+                    revision_instruction=instruction,
+                    target_video=target_video,
+                )
+            )
         except CodexExecutionError as error:
             if error.summary is not None:
                 summaries.append(error.summary)
@@ -136,7 +145,7 @@ class CodexRunner:
             "workspace-write",
             "--json",
         ]
-        if stage in {"generate-video", "revise-video"}:
+        if stage in {"generate-video", "revise-video", "self-check-video"}:
             command.extend([
                 "--config",
                 "sandbox_workspace_write.network_access=true",
@@ -353,7 +362,7 @@ class CodexRunner:
                 request_label = request
             request_context = f"- 動画概要: {request_label}\n"
         speaker_context = ""
-        if stage in {"generate-video", "revise-video"}:
+        if stage in {"generate-video", "revise-video", "self-check-video"}:
             speaker_context = (
                 f"- ナレーション話者: {self.speaker}\n"
                 "- ナレーション話者に指定された名前を "

@@ -28,7 +28,7 @@ class FakeCodexProcess:
 class CodexRunnerTests(unittest.TestCase):
     def make_project(self, directory: Path) -> tuple[ProjectPaths, Path]:
         project = ProjectPaths(directory)
-        for name in ("research.md", "write-script.md", "generate-video.md"):
+        for name in ("research.md", "write-script.md", "generate-video.md", "self-check-video.md"):
             path = project.prompts / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"# {name}", encoding="utf-8")
@@ -59,11 +59,11 @@ class CodexRunnerTests(unittest.TestCase):
             ]
             with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
                 "utsuroclip.codex.subprocess.Popen",
-                side_effect=[FakeCodexProcess(events, "progress\n") for _ in range(3)],
+                side_effect=[FakeCodexProcess(events, "progress\n") for _ in range(4)],
             ) as popen, redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()) as stderr:
                 CodexRunner(project, "fake-codex").run_pipeline(request)
 
-            self.assertEqual(popen.call_count, 3)
+            self.assertEqual(popen.call_count, 4)
             first_command = popen.call_args_list[0].args[0]
             self.assertEqual(first_command[:4], ["fake-codex", "exec", "--sandbox", "workspace-write"])
             self.assertIn("--json", first_command)
@@ -72,11 +72,15 @@ class CodexRunnerTests(unittest.TestCase):
             self.assertIn("sandbox_workspace_write.network_access=true", video_command)
             self.assertIn("features.network_proxy.enabled=true", video_command)
             self.assertIn('features.network_proxy.domains={ "127.0.0.1" = "allow" }', video_command)
+            check_command = popen.call_args_list[3].args[0]
+            self.assertIn("sandbox_workspace_write.network_access=true", check_command)
+            self.assertIn("現在の工程: self-check-video", check_command[-1])
+            self.assertTrue((project.logs / "self-check-video.stdout.log").is_file())
             self.assertTrue((project.logs / "research.stdout.log").is_file())
             self.assertIn('"turn.completed"', (project.logs / "research.stdout.log").read_text(encoding="utf-8"))
             self.assertEqual((project.logs / "research.stderr.log").read_text(encoding="utf-8"), "progress\n")
             self.assertIn("[research] 実行: manim scene.py", stdout.getvalue())
-            self.assertIn("input 300", stdout.getvalue())
+            self.assertIn("input 400", stdout.getvalue())
             self.assertIn("[research] progress", stderr.getvalue())
 
     def test_includes_selected_speaker_in_video_generation_prompt(self) -> None:
@@ -107,14 +111,14 @@ class CodexRunnerTests(unittest.TestCase):
             target.touch()
             events = [{"type": "turn.completed", "usage": {"input_tokens": 10}}]
             with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
-                "utsuroclip.codex.subprocess.Popen", return_value=FakeCodexProcess(events)
+                "utsuroclip.codex.subprocess.Popen", side_effect=[FakeCodexProcess(events) for _ in range(2)]
             ) as popen, redirect_stdout(StringIO()):
                 CodexRunner(project, "fake-codex", "ずんだもん").run_revision(
                     "文字を大きくして", target
                 )
 
-            self.assertEqual(popen.call_count, 1)
-            command = popen.call_args.args[0]
+            self.assertEqual(popen.call_count, 2)
+            command = popen.call_args_list[0].args[0]
             self.assertIn("sandbox_workspace_write.network_access=true", command)
             self.assertIn("features.network_proxy.enabled=true", command)
             prompt = command[-1]
@@ -122,6 +126,42 @@ class CodexRunnerTests(unittest.TestCase):
             self.assertIn("ユーザーの修正指示:\n文字を大きくして", prompt)
             self.assertIn("ナレーション話者: ずんだもん", prompt)
             self.assertTrue((project.logs / "revise-video.stdout.log").is_file())
+            check_command = popen.call_args_list[1].args[0]
+            self.assertIn("sandbox_workspace_write.network_access=true", check_command)
+            self.assertIn("修正対象の完成動画: output/20260101000000_topic.mp4", check_command[-1])
+            self.assertIn("ユーザーの修正指示:\n文字を大きくして", check_command[-1])
+            self.assertIn("ナレーション話者: ずんだもん", check_command[-1])
+            self.assertTrue((project.logs / "self-check-video.stdout.log").is_file())
+
+    def test_stops_before_self_check_when_generation_fails(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            success = FakeCodexProcess([])
+            failure = FakeCodexProcess([], returncode=1)
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
+                "utsuroclip.codex.subprocess.Popen", side_effect=[success, success, failure]
+            ) as popen, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                with self.assertRaises(CodexExecutionError):
+                    CodexRunner(project).run_pipeline(request)
+
+            self.assertEqual(popen.call_count, 3)
+            self.assertFalse((project.logs / "self-check-video.stdout.log").exists())
+
+    def test_stops_revision_when_self_check_fails(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, _ = self.make_project(Path(temp))
+            (project.prompts / "revise-video.md").write_text("# revise", encoding="utf-8")
+            target = project.output / "original.mp4"
+            target.touch()
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
+                "utsuroclip.codex.subprocess.Popen",
+                side_effect=[FakeCodexProcess([]), FakeCodexProcess([], returncode=1)],
+            ) as popen, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                with self.assertRaises(CodexExecutionError):
+                    CodexRunner(project).run_revision("修正", target)
+
+            self.assertEqual(popen.call_count, 2)
+            self.assertTrue((project.logs / "self-check-video.stdout.log").is_file())
 
     def test_stops_after_a_failed_stage(self) -> None:
         with TemporaryDirectory() as temp:

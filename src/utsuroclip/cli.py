@@ -43,9 +43,10 @@ class RevisionBackup:
     def restore(self) -> None:
         failed_logs = self.directory / "failed-logs"
         failed_logs.mkdir()
-        for log in self.project.logs.glob("revise-video.*"):
-            if log.is_file():
-                shutil.copy2(log, failed_logs / log.name)
+        for stage in ("revise-video", "self-check-video"):
+            for log in self.project.logs.glob(f"{stage}.*"):
+                if log.is_file():
+                    shutil.copy2(log, failed_logs / log.name)
 
         shutil.rmtree(self.project.work)
         shutil.copytree(self.work, self.project.work, symlinks=True)

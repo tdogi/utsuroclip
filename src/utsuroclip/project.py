@@ -84,6 +84,7 @@ class ProjectPaths:
             self.prompts / "research.md",
             self.prompts / "write-script.md",
             self.prompts / "generate-video.md",
+            self.prompts / "self-check-video.md",
         ]
         missing = [str(path.relative_to(self.root)) for path in required if not path.is_file()]
         if missing:
@@ -95,6 +96,7 @@ class ProjectPaths:
         """Reject revision when the retained production set is incomplete."""
         required = [
             self.prompts / "revise-video.md",
+            self.prompts / "self-check-video.md",
             self.work / "script" / "script.md",
             self.final_video_record,
             self.speaker_record,

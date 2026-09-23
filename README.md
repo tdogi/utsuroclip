@@ -122,7 +122,8 @@ utsuroclip generate input/request.md --speaker ずんだもん
 
 1. 調査を行い、`work/research/research.md` と `work/research/sources.md` を生成する。
 2. 調査結果から `work/script/script.md` を作成する。
-3. VOICEVOX、Manim、FFmpegを使い、`output/YYYYMMDDhhmmss_タイトル.mp4` を生成する。タイトルはCodexが動画内容に合わせて決定する。
+3. VOICEVOXとManimを使い、シーンごとの音声と映像を生成する。
+4. レンダリング結果をセルフチェックし、問題があれば修正・再レンダリングする。問題がないことを確認してからFFmpegで結合し、`output/YYYYMMDDhhmmss_タイトル.mp4` を生成する。タイトルはCodexが動画内容に合わせて決定する。
 
 実行中は、工程の開始・完了、Codex が実行するコマンド、Web 検索、Codex からの進捗メッセージが端末に表示されます。各工程の終了時とパイプライン全体の終了時には、経過時間と Codex が報告した input / cached input / output / reasoning output トークン数が表示されます。Codex CLI が使用量を返さない場合は `取得不可` と表示されます。
 
@@ -150,9 +151,9 @@ utsuroclip generate /absolute/path/request.md --project-root /path/to/utsuroclip
 utsuroclip revise -p "20秒あたりの波形の図を少し下に移動させて"
 ```
 
-`revise` は記録済みの完成動画と `work/` の台本、音声、Manimコード、シーン映像を確認して、修正対象をCodexに特定させます。必要な素材だけを更新・再レンダリングし、元動画を残したまま `元動画名_revised_YYYYMMDDhhmmss.mp4` の形式で `output/` に修正版を保存します。続けて修正する場合は、直前の修正版が対象になります。
+`revise` は記録済みの完成動画と `work/` の台本、音声、Manimコード、シーン映像を確認して、修正対象をCodexに特定させます。必要な素材だけを更新・再レンダリングし、別工程で全シーンをセルフチェックします。問題があれば修正・再レンダリングし、問題がないことを確認してから結合します。元動画を残したまま `元動画名_revised_YYYYMMDDhhmmss.mp4` の形式で `output/` に修正版を保存します。続けて修正する場合は、直前の修正版が対象になります。
 
-`revise` は開始前に制作セットと修正対象MP4を一時バックアップします。Codex工程、成果物検証、保存のいずれかが失敗した場合は、台本・音声・Manimコード・シーン映像・対象記録・対象MP4を修正前の状態へ戻します。失敗した修正で新規作成されたMP4は削除し、`work/logs/revise-video.*` のログは原因調査のため保持します。
+`revise` は開始前に制作セットと修正対象MP4を一時バックアップします。Codex工程、成果物検証、保存のいずれかが失敗した場合は、台本・音声・Manimコード・シーン映像・対象記録・対象MP4を修正前の状態へ戻します。失敗した修正で新規作成されたMP4は削除し、`work/logs/revise-video.*` と `work/logs/self-check-video.*` のログは原因調査のため保持します。
 
 新しい `generate` を開始すると `work/` の中間成果物と記録は削除されるため、過去動画を選択して修正することはできません。`work/` の制作素材、記録済みの対象MP4、または必要な依存ツールがない場合、`revise` は失敗して直接MP4を編集しません。
 
