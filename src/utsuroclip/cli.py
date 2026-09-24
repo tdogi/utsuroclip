@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -80,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SPEAKER,
         help=f"ナレーション話者（既定値: {DEFAULT_SPEAKER}）",
     )
+    generate.add_argument("--bgm", type=Path, help="完成動画に重ねる音楽ファイル")
     generate.add_argument(
         "-y",
         "--yes",
@@ -220,6 +222,58 @@ def recorded_speaker(project: ProjectPaths) -> str:
     return speaker
 
 
+def validate_bgm(path: Path) -> None:
+    if not path.is_file():
+        raise CodexExecutionError(f"BGMファイルが見つかりません: {path}")
+    if shutil.which("ffmpeg") is None:
+        raise CodexExecutionError("BGMの確認に必要なFFmpegが見つかりません")
+    result = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a:0", "-t", "0.1", "-f", "null", "-"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        raise CodexExecutionError(
+            f"BGMの音声を読み取れません: {path} ({result.stderr.strip() or 'FFmpegエラー'})"
+        )
+
+
+def recorded_bgm(project: ProjectPaths) -> Path | None:
+    if not project.bgm_record.exists():
+        return None
+    recorded = project.bgm_record.read_text(encoding="utf-8").strip()
+    candidate = (project.root / recorded).resolve()
+    try:
+        candidate.relative_to((project.work / "audio").resolve())
+    except ValueError as error:
+        raise CodexExecutionError("BGMの記録は work/audio/ 内を指している必要があります") from error
+    if not recorded or not candidate.is_file():
+        raise CodexExecutionError(f"保存済みのBGMが見つかりません: {candidate}")
+    return candidate
+
+
+def mix_bgm(video: Path, bgm: Path) -> None:
+    """Replace a narration-only video only after FFmpeg has mixed it successfully."""
+    with tempfile.TemporaryDirectory(prefix="utsuroclip-bgm-", dir=video.parent) as directory:
+        mixed = Path(directory) / "mixed.mp4"
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", str(video), "-stream_loop", "-1", "-i", str(bgm),
+                "-filter_complex",
+                "[0:a:0]aresample=async=1:first_pts=0[voice];"
+                "[1:a:0]volume=0.15,aresample=async=1:first_pts=0[music];"
+                "[voice][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mixed]",
+                "-map", "0:v:0", "-map", "[mixed]", "-c:v", "copy", "-c:a", "aac",
+                "-shortest", str(mixed),
+            ],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode or not mixed.is_file():
+            raise CodexExecutionError(
+                f"BGMの適用に失敗しました: {result.stderr.strip() or 'FFmpegエラー'}"
+            )
+        mixed.replace(video)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "revise":
@@ -238,13 +292,28 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     project = ProjectPaths(root)
+    staged_bgm: Path | None = None
     try:
+        if args.bgm is not None:
+            bgm_source = args.bgm if args.bgm.is_absolute() else Path.cwd() / args.bgm
+            bgm_source = bgm_source.resolve()
+            validate_bgm(bgm_source)
+            with tempfile.NamedTemporaryFile(suffix=bgm_source.suffix, delete=False) as handle:
+                staged_bgm = Path(handle.name)
+            shutil.copy2(bgm_source, staged_bgm)
         project.require_assets()
         if not args.yes and not confirm_cleanup(project):
             print("中間成果物の削除が確認されなかったため、生成を中断しました。", file=sys.stderr)
             return 1
         project.clean_intermediate_artifacts()
         project.prepare_workspace()
+        retained_bgm = None
+        if staged_bgm is not None:
+            retained_bgm = project.work / "audio" / f"bgm{staged_bgm.suffix}"
+            shutil.copy2(staged_bgm, retained_bgm)
+            project.bgm_record.write_text(
+                f"{retained_bgm.relative_to(project.root)}\n", encoding="utf-8"
+            )
         previous_videos = {
             path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
         }
@@ -259,12 +328,17 @@ def main(argv: list[str] | None = None) -> int:
             raise CodexExecutionError(
                 f"同名の完成動画が既に存在するため上書きしません: {final_video}"
             )
+        if retained_bgm is not None:
+            mix_bgm(generated_video, retained_bgm)
         if generated_video != final_video:
             generated_video.rename(final_video)
         write_video_records(project, final_video, args.speaker)
     except (FileNotFoundError, CodexExecutionError, OSError, ProjectStateError) as error:
         print(f"生成に失敗しました: {error}", file=sys.stderr)
         return 1
+    finally:
+        if staged_bgm is not None:
+            staged_bgm.unlink(missing_ok=True)
 
     print(f"生成完了: {final_video}")
     print(f"工程ログ: {project.logs}")
@@ -277,6 +351,7 @@ def revise(args: argparse.Namespace) -> int:
         project.require_revision_assets()
         target_video = recorded_video_path(project)
         speaker = recorded_speaker(project)
+        bgm = recorded_bgm(project)
         temporary_video = project.output / "video.mp4"
         if temporary_video.exists():
             raise CodexExecutionError(
@@ -309,6 +384,8 @@ def revise(args: argparse.Namespace) -> int:
                 raise CodexExecutionError(
                     f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
                 )
+            if bgm is not None:
+                mix_bgm(generated_video, bgm)
             if generated_video != revised_video:
                 generated_video.rename(revised_video)
             write_video_records(project, revised_video, speaker)
