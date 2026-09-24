@@ -28,7 +28,8 @@ work/script/script.md
 work/script/title.txt
 output/*
 !output/.gitkeep
-input/request.md
+input/*
+!input/request.example.md
 
 # Ignore the .vscode directory
 .vscode/
