@@ -53,6 +53,11 @@ class ProjectPaths:
         return self.logs / "bgm.txt"
 
     @property
+    def bgm_volume_record(self) -> Path:
+        """BGM volume multiplier retained for future revisions."""
+        return self.logs / "bgm-volume.txt"
+
+    @property
     def commercial_mode_record(self) -> Path:
         """Font policy used for the video currently backed by ``work/``."""
         return self.logs / "commercial-mode.txt"

@@ -6,6 +6,7 @@ import argparse
 from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,6 +23,17 @@ from .project import ProjectPaths, ProjectStateError
 
 SPEAKERS = ("ずんだもん", "四国めたん", "春日部つむぎ")
 DEFAULT_SPEAKER = "春日部つむぎ"
+DEFAULT_BGM_VOLUME = 0.15
+
+
+def bgm_volume(value: str) -> float:
+    try:
+        volume = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("BGM音量は0以上の数値で指定してください") from error
+    if not math.isfinite(volume) or volume < 0:
+        raise argparse.ArgumentTypeError("BGM音量は0以上の有限な数値で指定してください")
+    return volume
 
 
 @dataclass(frozen=True)
@@ -86,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"ナレーション話者（既定値: {DEFAULT_SPEAKER}）",
     )
     generate.add_argument("--bgm", type=Path, help="完成動画に重ねる音楽ファイル")
+    generate.add_argument("--bgm-volume", type=bgm_volume, help="BGMの音量倍率（既定値: 0.15）")
     generate.add_argument(
         "--commercial", action="store_true", help="動画内のフォントを商用利用可能な Noto に制限する"
     )
@@ -106,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     revise.add_argument(
         "--codex-bin", default="codex", help="Codex CLI 実行ファイル名またはパス"
     )
+    revise.add_argument("--bgm-volume", type=bgm_volume, help="保存済みBGMの音量倍率を変更する")
     return parser
 
 
@@ -271,7 +285,18 @@ def recorded_bgm(project: ProjectPaths) -> Path | None:
     return candidate
 
 
-def mix_bgm(video: Path, bgm: Path) -> None:
+def recorded_bgm_volume(project: ProjectPaths) -> float:
+    """Use the former fixed volume for production sets without a volume record."""
+    if not project.bgm_volume_record.exists():
+        return DEFAULT_BGM_VOLUME
+    value = project.bgm_volume_record.read_text(encoding="utf-8").strip()
+    try:
+        return bgm_volume(value)
+    except argparse.ArgumentTypeError as error:
+        raise CodexExecutionError(f"保存済みのBGM音量が不正です: {value or '空'}") from error
+
+
+def mix_bgm(video: Path, bgm: Path, volume: float = DEFAULT_BGM_VOLUME) -> None:
     """Replace a narration-only video only after FFmpeg has mixed it successfully."""
     with tempfile.TemporaryDirectory(prefix="utsuroclip-bgm-", dir=video.parent) as directory:
         mixed = Path(directory) / "mixed.mp4"
@@ -280,7 +305,7 @@ def mix_bgm(video: Path, bgm: Path) -> None:
                 "ffmpeg", "-v", "error", "-i", str(video), "-stream_loop", "-1", "-i", str(bgm),
                 "-filter_complex",
                 "[0:a:0]aresample=async=1:first_pts=0[voice];"
-                "[1:a:0]volume=0.15,aresample=async=1:first_pts=0[music];"
+                f"[1:a:0]volume={volume},aresample=async=1:first_pts=0[music];"
                 "[voice][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mixed]",
                 "-map", "0:v:0", "-map", "[mixed]", "-c:v", "copy", "-c:a", "aac",
                 "-shortest", str(mixed),
@@ -309,6 +334,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if request.suffix.lower() not in {".md", ".markdown"}:
         print("動画概要ファイルは Markdown（.md または .markdown）にしてください。", file=sys.stderr)
+        return 2
+    if args.bgm_volume is not None and args.bgm is None:
+        print("--bgm-volume を使うには --bgm も指定してください。", file=sys.stderr)
         return 2
 
     project = ProjectPaths(root)
@@ -340,6 +368,10 @@ def main(argv: list[str] | None = None) -> int:
             project.bgm_record.write_text(
                 f"{retained_bgm.relative_to(project.root)}\n", encoding="utf-8"
             )
+            project.bgm_volume_record.write_text(
+                f"{args.bgm_volume if args.bgm_volume is not None else DEFAULT_BGM_VOLUME}\n",
+                encoding="utf-8",
+            )
         previous_videos = {
             path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
         }
@@ -357,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"同名の完成動画が既に存在するため上書きしません: {final_video}"
             )
         if retained_bgm is not None:
-            mix_bgm(generated_video, retained_bgm)
+            mix_bgm(generated_video, retained_bgm, recorded_bgm_volume(project))
         if generated_video != final_video:
             generated_video.rename(final_video)
         write_video_records(project, final_video, args.speaker, args.commercial)
@@ -385,6 +417,11 @@ def revise(args: argparse.Namespace) -> int:
         if commercial:
             project.require_commercial_font_assets()
         bgm = recorded_bgm(project)
+        if args.bgm_volume is not None and bgm is None:
+            raise CodexExecutionError("--bgm-volume を使うには保存済みのBGMが必要です")
+        volume = args.bgm_volume if args.bgm_volume is not None else (
+            recorded_bgm_volume(project) if bgm is not None else None
+        )
         temporary_video = project.output / "video.mp4"
         if temporary_video.exists():
             raise CodexExecutionError(
@@ -404,7 +441,7 @@ def revise(args: argparse.Namespace) -> int:
             previous_videos,
         )
         return _revise_with_fonts(
-            args, project, target_video, speaker, bgm, backup, previous_videos, commercial_env
+            args, project, target_video, speaker, bgm, volume, backup, previous_videos, commercial_env
         )
     except (FileNotFoundError, CodexExecutionError, CommercialFontError, OSError, ProjectStateError) as error:
         print(f"修正に失敗しました: {error}", file=sys.stderr)
@@ -419,6 +456,7 @@ def _revise_with_fonts(
     target_video: Path,
     speaker: str,
     bgm: Path | None,
+    volume: float | None,
     backup: RevisionBackup,
     previous_videos: set[Path],
     commercial_env: dict[str, str] | None,
@@ -444,7 +482,9 @@ def _revise_with_fonts(
                 f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
             )
         if bgm is not None:
-            mix_bgm(generated_video, bgm)
+            assert volume is not None
+            mix_bgm(generated_video, bgm, volume)
+            project.bgm_volume_record.write_text(f"{volume}\n", encoding="utf-8")
         if generated_video != revised_video:
             generated_video.rename(revised_video)
         write_video_records(project, revised_video, speaker, commercial)
