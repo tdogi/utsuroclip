@@ -2,6 +2,12 @@
 
 Codex、Manim、VOICEVOX、FFmpegを使って、Markdownの動画概要から縦型の短尺解説動画を生成するCLIツールです。調査結果、台本、音声、Manimコード、シーン映像も `work/` に残ります。
 
+## サンプル
+
+https://github.com/user-attachments/assets/64de4fdc-1ec1-4c0b-baa4-58bfa6da6112
+
+Voice: VOICEVOX:春日部つむぎ
+
 ## 必要環境
 
 外部ツールは利用者がインストールして起動します。UtsuroClip はそれらを自動ダウンロードしません。
