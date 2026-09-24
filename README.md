@@ -133,10 +133,10 @@ utsuroclip generate input/request.md --commercial
 任意のローカル音楽ファイルをBGMに指定できます。FFmpegが読み取れる音声形式に対応します。
 
 ```bash
-utsuroclip generate input/request.md --bgm /path/to/music.mp3
+utsuroclip generate input/request.md --bgm /path/to/music.mp3 --bgm-volume 0.15
 ```
 
-BGMはナレーション付き動画の完成直前に控えめな音量（元の15%）で重ねます。曲が短ければ繰り返し、長ければ動画の終わりで切ります。指定した音楽ファイルは `work/audio/` に保存され、`revise` でも同じBGMを再適用します。`--bgm` を省略すると従来どおりBGMなしで生成します。公開時には音楽ファイルの利用条件を確認してください。
+BGMはナレーション付き動画の完成直前に重ねます。`--bgm-volume` は元の音量に掛ける倍率で、0は無音、0.15は15%、1は元の音量です。0以上の数値を指定でき、省略時は0.15です。`generate` では `--bgm` と一緒に指定します。曲が短ければ繰り返し、長ければ動画の終わりで切ります。指定した音楽ファイルと音量は保存され、`revise` でも同じ設定を再適用します。修正時には `utsuroclip revise -p "修正内容" --bgm-volume 0.25` のように音量を変更できます。`--bgm` を省略すると従来どおりBGMなしで生成します。公開時には音楽ファイルの利用条件を確認してください。
 
 実行すると以下の順に Codex が起動します。
 
