@@ -9,10 +9,24 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from utsuroclip.cli import CodexExecutionError, main, safe_title
+from utsuroclip.cli import CodexExecutionError, main, mix_bgm, safe_title
 
 
 class CliTests(unittest.TestCase):
+    def test_failed_bgm_mix_preserves_narration_video(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            video = root / "video.mp4"
+            video.write_bytes(b"narration video")
+            music = root / "music.mp3"
+            music.touch()
+            with patch("utsuroclip.cli.subprocess.run") as run:
+                run.return_value.returncode = 1
+                run.return_value.stderr = "decode error"
+                with self.assertRaisesRegex(CodexExecutionError, "decode error"):
+                    mix_bgm(video, music)
+            self.assertEqual(video.read_bytes(), b"narration video")
+
     def make_project(self, directory: Path) -> Path:
         for name in ("research.md", "write-script.md", "generate-video.md", "self-check-video.md"):
             path = directory / "prompts" / name
@@ -105,6 +119,42 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertEqual(runner.call_args.args[2], "ずんだもん")
+
+    def test_generate_retains_and_mixes_bgm_from_work_directory(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            source = root / "work" / "audio" / "song.mp3"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"music")
+            with patch("utsuroclip.cli.validate_bgm") as validate, patch(
+                "utsuroclip.cli.mix_bgm"
+            ) as mix, patch("utsuroclip.cli.CodexRunner") as runner:
+                runner.return_value.run_pipeline.side_effect = lambda _request: self.write_generated_artifacts(root)
+                result = main(["generate", str(request), "--project-root", str(root), "--bgm", str(source), "--yes"])
+
+            self.assertEqual(result, 0)
+            validate.assert_called_once_with(source.resolve())
+            retained = root / "work" / "audio" / "bgm.mp3"
+            self.assertEqual(retained.read_bytes(), b"music")
+            self.assertFalse(source.exists())
+            self.assertEqual((root / "work" / "logs" / "bgm.txt").read_text(), "work/audio/bgm.mp3\n")
+            mix.assert_called_once()
+            self.assertEqual(mix.call_args.args[1], retained)
+
+    def test_generate_invalid_bgm_leaves_existing_work_untouched(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            artifact = root / "work" / "audio" / "scene_001.wav"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_bytes(b"existing")
+            with patch("utsuroclip.cli.CodexRunner") as runner:
+                result = main(["generate", str(request), "--project-root", str(root), "--bgm", str(root / "missing.mp3"), "--yes"])
+
+            self.assertEqual(result, 1)
+            self.assertEqual(artifact.read_bytes(), b"existing")
+            runner.assert_not_called()
 
     def test_generate_recovers_a_video_renamed_by_codex(self) -> None:
         with TemporaryDirectory() as temp:
@@ -297,6 +347,22 @@ class CliTests(unittest.TestCase):
                 (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
                 f"output/{revised[0].name}\n",
             )
+
+    def test_revise_reapplies_retained_bgm(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_revision_artifacts(root)
+            bgm = root / "work" / "audio" / "bgm.mp3"
+            bgm.write_bytes(b"music")
+            (root / "work" / "logs" / "bgm.txt").write_text("work/audio/bgm.mp3\n")
+            with patch("utsuroclip.cli.mix_bgm") as mix, patch("utsuroclip.cli.CodexRunner") as runner:
+                runner.return_value.run_revision.side_effect = lambda _prompt, _target: (
+                    root / "output" / "video.mp4"
+                ).touch()
+                result = main(["revise", "-p", "修正", "--project-root", str(root)])
+
+            self.assertEqual(result, 0)
+            mix.assert_called_once_with(root / "output" / "video.mp4", bgm.resolve())
 
     def test_revise_recovers_a_video_renamed_by_codex(self) -> None:
         with TemporaryDirectory() as temp:

@@ -47,6 +47,11 @@ class ProjectPaths:
         """Narration speaker used for the video currently backed by ``work/``."""
         return self.logs / "speaker.txt"
 
+    @property
+    def bgm_record(self) -> Path:
+        """Relative path of the BGM retained for future revisions."""
+        return self.logs / "bgm.txt"
+
     def intermediate_artifacts(self) -> list[Path]:
         """Return generated files that would be removed before a new run."""
         if not self.work.is_dir():

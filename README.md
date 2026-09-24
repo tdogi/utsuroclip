@@ -124,6 +124,14 @@ utsuroclip generate input/request.md
 utsuroclip generate input/request.md --speaker ずんだもん
 ```
 
+任意のローカル音楽ファイルをBGMに指定できます。FFmpegが読み取れる音声形式に対応します。
+
+```bash
+utsuroclip generate input/request.md --bgm /path/to/music.mp3
+```
+
+BGMはナレーション付き動画の完成直前に控えめな音量（元の15%）で重ねます。曲が短ければ繰り返し、長ければ動画の終わりで切ります。指定した音楽ファイルは `work/audio/` に保存され、`revise` でも同じBGMを再適用します。`--bgm` を省略すると従来どおりBGMなしで生成します。公開時には音楽ファイルの利用条件を確認してください。
+
 実行すると以下の順に Codex が起動します。
 
 1. 調査を行い、`work/research/research.md` と `work/research/sources.md` を生成する。
