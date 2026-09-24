@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 from queue import Empty, Queue
 import shutil
@@ -13,6 +14,7 @@ from threading import Thread
 from time import monotonic
 from typing import Iterator, TextIO
 
+from .commercial_fonts import CommercialFontError, validate_scene_sources
 from .project import ProjectPaths
 
 
@@ -62,6 +64,8 @@ class CodexRunner:
     project: ProjectPaths
     executable: str = "codex"
     speaker: str = "春日部つむぎ"
+    commercial_env: dict[str, str] | None = None
+    FONT_REPAIR_LIMIT = 2
 
     STAGES = (
         ("research", "research.md"),
@@ -79,11 +83,18 @@ class CodexRunner:
         request = request.resolve()
         summaries: list[StageSummary] = []
         started_at = monotonic()
+        repairs_left = self.FONT_REPAIR_LIMIT
         try:
             for stage, prompt_name in self.STAGES:
                 summaries.append(
                     self._run_stage(stage, self.project.prompts / prompt_name, request)
                 )
+                if self.commercial_env and stage == "generate-video":
+                    repairs_left, _ = self._repair_font_issues(summaries, repairs_left, request)
+                if self.commercial_env and stage == "self-check-video":
+                    repairs_left = self._finish_commercial_fonts(
+                        summaries, repairs_left, request=request
+                    )
         except CodexExecutionError as error:
             if error.summary is not None:
                 summaries.append(error.summary)
@@ -100,6 +111,7 @@ class CodexRunner:
 
         started_at = monotonic()
         summaries: list[StageSummary] = []
+        repairs_left = self.FONT_REPAIR_LIMIT
         try:
             summaries.append(
                 self._run_stage(
@@ -109,6 +121,11 @@ class CodexRunner:
                     target_video=target_video,
                 )
             )
+            if self.commercial_env:
+                repairs_left, _ = self._repair_font_issues(
+                    summaries, repairs_left, revision_instruction=instruction,
+                    target_video=target_video,
+                )
             summaries.append(
                 self._run_stage(
                     "self-check-video",
@@ -117,12 +134,83 @@ class CodexRunner:
                     target_video=target_video,
                 )
             )
+            if self.commercial_env:
+                self._finish_commercial_fonts(
+                    summaries, repairs_left, revision_instruction=instruction,
+                    target_video=target_video,
+                )
         except CodexExecutionError as error:
             if error.summary is not None:
                 summaries.append(error.summary)
             raise
         finally:
             self._print_pipeline_summary(summaries, monotonic() - started_at)
+
+    def _repair_font_issues(
+        self,
+        summaries: list[StageSummary],
+        repairs_left: int,
+        request: Path | None = None,
+        revision_instruction: str | None = None,
+        target_video: Path | None = None,
+    ) -> tuple[int, bool]:
+        repaired = False
+        rendered_before: dict[Path, int] | None = None
+        while True:
+            try:
+                validate_scene_sources(self.project.work / "scenes")
+                if rendered_before is not None and self._rendered_snapshot() == rendered_before:
+                    raise CommercialFontError(
+                        "フォントの修正後にシーン映像が再レンダリングされていません"
+                    )
+                return repairs_left, repaired
+            except CommercialFontError as error:
+                if repairs_left == 0:
+                    raise CodexExecutionError(
+                        f"商用利用モードのフォント違反を修正できませんでした: {error}"
+                    ) from error
+                attempt = self.FONT_REPAIR_LIMIT - repairs_left + 1
+                repairs_left -= 1
+                repaired = True
+                rendered_before = self._rendered_snapshot()
+                summaries.append(self._run_stage(
+                    f"repair-commercial-fonts-{attempt}",
+                    self.project.prompts / "repair-commercial-fonts.md",
+                    request,
+                    revision_instruction,
+                    target_video,
+                    font_issue=str(error),
+                ))
+
+    def _rendered_snapshot(self) -> dict[Path, int]:
+        return {
+            path: path.stat().st_mtime_ns
+            for path in (self.project.work / "rendered").glob("scene_*.mp4")
+            if path.is_file()
+        }
+
+    def _finish_commercial_fonts(
+        self,
+        summaries: list[StageSummary],
+        repairs_left: int,
+        request: Path | None = None,
+        revision_instruction: str | None = None,
+        target_video: Path | None = None,
+    ) -> int:
+        while True:
+            repairs_left, repaired = self._repair_font_issues(
+                summaries, repairs_left, request, revision_instruction, target_video
+            )
+            if not repaired:
+                return repairs_left
+            attempt = self.FONT_REPAIR_LIMIT - repairs_left
+            summaries.append(self._run_stage(
+                f"self-check-video-font-repair-{attempt}",
+                self.project.prompts / "self-check-video.md",
+                request,
+                revision_instruction,
+                target_video,
+            ))
 
     def _run_stage(
         self,
@@ -131,9 +219,10 @@ class CodexRunner:
         request: Path | None = None,
         revision_instruction: str | None = None,
         target_video: Path | None = None,
+        font_issue: str | None = None,
     ) -> StageSummary:
         prompt = self._build_prompt(
-            stage, prompt_path, request, revision_instruction, target_video
+            stage, prompt_path, request, revision_instruction, target_video, font_issue
         )
         final_message = self.project.logs / f"{stage}.final.md"
         stdout_log = self.project.logs / f"{stage}.stdout.log"
@@ -145,7 +234,7 @@ class CodexRunner:
             "workspace-write",
             "--json",
         ]
-        if stage in {"generate-video", "revise-video", "self-check-video"}:
+        if self._is_video_stage(stage):
             command.extend([
                 "--config",
                 "sandbox_workspace_write.network_access=true",
@@ -158,6 +247,9 @@ class CodexRunner:
 
         print(f"工程開始: {stage}", flush=True)
         started_at = monotonic()
+        options = {}
+        if self.commercial_env and self._is_video_stage(stage):
+            options["env"] = {**os.environ, **self.commercial_env}
         process = subprocess.Popen(
             command,
             cwd=self.project.root,
@@ -165,6 +257,7 @@ class CodexRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=1,
+            **options,
         )
         usage = TokenUsage()
         with stdout_log.open("w", encoding="utf-8") as stdout_file, stderr_log.open(
@@ -198,6 +291,12 @@ class CodexRunner:
             flush=True,
         )
         return summary
+
+    @staticmethod
+    def _is_video_stage(stage: str) -> bool:
+        return stage in {"generate-video", "revise-video", "self-check-video"} or stage.startswith(
+            ("repair-commercial-fonts-", "self-check-video-font-repair-")
+        )
 
     def _stream_process_output(
         self, process: subprocess.Popen[str]
@@ -352,6 +451,7 @@ class CodexRunner:
         request: Path | None = None,
         revision_instruction: str | None = None,
         target_video: Path | None = None,
+        font_issue: str | None = None,
     ) -> str:
         instructions = prompt_path.read_text(encoding="utf-8").strip()
         request_context = ""
@@ -362,12 +462,24 @@ class CodexRunner:
                 request_label = request
             request_context = f"- 動画概要: {request_label}\n"
         speaker_context = ""
-        if stage in {"generate-video", "revise-video", "self-check-video"}:
+        if self._is_video_stage(stage):
             speaker_context = (
                 f"- ナレーション話者: {self.speaker}\n"
                 "- ナレーション話者に指定された名前を "
                 "`python tools/voicevox.py --speaker` へ必ず渡してください。\n"
             )
+        commercial_context = ""
+        if self.commercial_env and self._is_video_stage(stage):
+            commercial_context = (
+                "- 商用利用モード: 有効。動画内の文字には Noto Sans CJK JP、"
+                "Noto Sans Mono CJK JP、Noto Serif CJK JP、Noto Sans Math のみを使用してください。\n"
+                "- 数式記号は Text と Noto Sans Math で描画し、Tex / MathTex と"
+                " 未確認フォントを使用しないでください。\n"
+                "- 未許可フォントや未対応文字でレンダリングが失敗したら、"
+                "許可済みフォントや表現に修正して再レンダリングしてください。"
+                "解消できない場合だけ工程を失敗として報告してください。\n"
+            )
+        font_issue_context = f"- 検出したフォントの問題: {font_issue}\n" if font_issue else ""
         revision_context = ""
         if revision_instruction is not None or target_video is not None:
             if revision_instruction is None or target_video is None:  # pragma: no cover
@@ -388,6 +500,8 @@ class CodexRunner:
             f"- プロジェクトルート: {self.project.root}\n"
             f"{request_context}"
             f"{speaker_context}"
+            f"{commercial_context}"
+            f"{font_issue_context}"
             f"{revision_context}"
             "- このリポジトリの AGENTS.md と関連 Skill を必ず守ってください。\n"
             "- 指定された成果物を実際に保存し、完了後に保存先と実施内容を簡潔に報告してください。"

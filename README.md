@@ -57,18 +57,18 @@ ManimはFFmpegやCairo/Pangoなどのシステム依存を必要とする場合�
 
 ### 日本語フォント
 
-映像内に日本語のテキストを表示する場合、Manimが利用できる日本語フォントが必要です。Ubuntu / Debianでは、Noto CJKフォントを導入してフォントキャッシュを更新します。
+映像内に日本語のテキストを表示する場合、Manimが利用できる日本語フォントが必要です。Ubuntu / Debianでは、Noto CJKフォントを導入してフォントキャッシュを更新します。WSLのUbuntuでも同じコマンドを実行できます。商用利用モードで数式記号を使うため、[`fonts-noto-core`](https://packages.ubuntu.com/resolute/all/fonts-noto-core/filelist) に含まれる `Noto Sans Math` も導入します。
 
 ```bash
 sudo apt update
-sudo apt install fonts-noto-cjk
+sudo apt install fonts-noto-cjk fonts-noto-core
 fc-cache -f
 ```
 
-導入後、次のコマンドで日本語対応フォント（例: `Noto Sans CJK JP`）が表示されることを確認してください。
+導入後、次のコマンドで `Noto Sans CJK JP` と `Noto Sans Math` が表示されることを確認してください。`fc-match` は指定したフォントがない場合も代替フォントを返すため、この確認には使いません。
 
 ```bash
-fc-list :lang=ja family | sort -u
+fc-list : family | sort -u | grep -E 'Noto Sans CJK JP|Noto Sans Math'
 ```
 
 ### 4. FFmpeg
@@ -122,6 +122,12 @@ utsuroclip generate input/request.md
 
 ```bash
 utsuroclip generate input/request.md --speaker ずんだもん
+```
+
+商用利用モードでは、動画の文字を `Noto Sans CJK JP`、`Noto Sans Mono CJK JP`、`Noto Serif CJK JP`、`Noto Sans Math` に制限します。日本語、英数字、一般的な記号には Noto CJK、数式記号には Noto Sans Math を使用します。必要な Noto フォントが導入されていない場合は生成前に停止します。Codex が未許可フォントや未対応文字を使った場合は、許可済みフォントや別の表現への修正と再レンダリングを試みます。2回の修正でも解消できない場合は完成扱いにせず停止します。`revise` でもこの設定を引き継ぎます。通常モードのフォント選択は変わりません。
+
+```bash
+utsuroclip generate input/request.md --commercial
 ```
 
 任意のローカル音楽ファイルをBGMに指定できます。FFmpegが読み取れる音声形式に対応します。
@@ -182,5 +188,9 @@ utsuroclip revise -p "冒頭の説明をもっと短くして" --project-root /p
 ## ライセンスと外部ツール
 
 UtsuroClip本体は [MIT License](LICENSE) で提供します。Codex CLI、VOICEVOX Engine、Manim Community Edition、FFmpegは利用者が別途導入する外部ツールであり、詳細なライセンスと利用上の注意は[第三者通知](THIRD_PARTY_NOTICES.md)を確認してください。
+
+**商用利用モードは、動画生成で使用するフォントを商用利用可能と確認したフォントに制限する機能です。利用者が用意した画像・映像・音声・BGMなどの権利や利用条件は、自動では確認しません。これらの素材の商用利用、改変、公開、必要なクレジット表示などの条件は、利用者が確認し、遵守してください。**
+
+商用利用モードで使用する Noto フォントの利用条件は[第三者通知](THIRD_PARTY_NOTICES.md#video-fonts)に記載しています。フォントファイルを同梱・再配布する場合は、各フォントのライセンス条件に従ってください。
 
 VOICEVOXで生成した音声を公開する際は、選択した話者に対応するクレジット表記が必要です。動画内または説明欄などに、たとえば `VOICEVOX:春日部つむぎ` と記載してください。話者ごとの詳しい条件は[第三者通知](THIRD_PARTY_NOTICES.md#voicevox-generated-audio)から公式規約を確認してください。

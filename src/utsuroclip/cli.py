@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,9 @@ import tempfile
 import unicodedata
 
 from .codex import CodexExecutionError, CodexRunner
+from .commercial_fonts import (
+    CommercialFontError, commercial_font_environment, validate_scene_sources,
+)
 from .project import ProjectPaths, ProjectStateError
 
 
@@ -82,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"ナレーション話者（既定値: {DEFAULT_SPEAKER}）",
     )
     generate.add_argument("--bgm", type=Path, help="完成動画に重ねる音楽ファイル")
+    generate.add_argument(
+        "--commercial", action="store_true", help="動画内のフォントを商用利用可能な Noto に制限する"
+    )
     generate.add_argument(
         "-y",
         "--yes",
@@ -181,13 +188,26 @@ def revised_video_path(target: Path) -> Path:
     return target.with_name(f"{target.stem}_revised_{datetime.now():%Y%m%d%H%M%S}.mp4")
 
 
-def write_video_records(project: ProjectPaths, video: Path, speaker: str) -> None:
+def write_video_records(project: ProjectPaths, video: Path, speaker: str, commercial: bool = False) -> None:
     try:
         relative_video = video.relative_to(project.root)
     except ValueError as error:  # pragma: no cover - callers always use project.output
         raise CodexExecutionError(f"完成動画がプロジェクト外にあります: {video}") from error
     project.final_video_record.write_text(f"{relative_video}\n", encoding="utf-8")
     project.speaker_record.write_text(f"{speaker}\n", encoding="utf-8")
+    project.commercial_mode_record.write_text(
+        "commercial\n" if commercial else "standard\n", encoding="utf-8"
+    )
+
+
+def recorded_commercial_mode(project: ProjectPaths) -> bool:
+    """Old production sets without a record were made in standard mode."""
+    if not project.commercial_mode_record.exists():
+        return False
+    value = project.commercial_mode_record.read_text(encoding="utf-8").strip()
+    if value not in {"commercial", "standard"}:
+        raise CodexExecutionError(f"商用利用モードの記録が不正です: {value or '空'}")
+    return value == "commercial"
 
 
 def recorded_video_path(project: ProjectPaths) -> Path:
@@ -293,7 +313,11 @@ def main(argv: list[str] | None = None) -> int:
 
     project = ProjectPaths(root)
     staged_bgm: Path | None = None
+    font_stack = ExitStack()
     try:
+        commercial_env = font_stack.enter_context(
+            commercial_font_environment() if args.commercial else nullcontext(None)
+        )
         if args.bgm is not None:
             bgm_source = args.bgm if args.bgm.is_absolute() else Path.cwd() / args.bgm
             bgm_source = bgm_source.resolve()
@@ -302,6 +326,8 @@ def main(argv: list[str] | None = None) -> int:
                 staged_bgm = Path(handle.name)
             shutil.copy2(bgm_source, staged_bgm)
         project.require_assets()
+        if args.commercial:
+            project.require_commercial_font_assets()
         if not args.yes and not confirm_cleanup(project):
             print("中間成果物の削除が確認されなかったため、生成を中断しました。", file=sys.stderr)
             return 1
@@ -319,9 +345,11 @@ def main(argv: list[str] | None = None) -> int:
         }
         tools_before = project.tools_snapshot()
         try:
-            CodexRunner(project, args.codex_bin, args.speaker).run_pipeline(request)
+            CodexRunner(project, args.codex_bin, args.speaker, commercial_env).run_pipeline(request)
         finally:
             project.require_tools_unchanged(tools_before)
+        if args.commercial:
+            validate_scene_sources(project.work / "scenes")
         generated_video = generated_video_path(project, previous_videos)
         final_video = final_video_path(project)
         if generated_video != final_video and final_video.exists():
@@ -332,11 +360,12 @@ def main(argv: list[str] | None = None) -> int:
             mix_bgm(generated_video, retained_bgm)
         if generated_video != final_video:
             generated_video.rename(final_video)
-        write_video_records(project, final_video, args.speaker)
-    except (FileNotFoundError, CodexExecutionError, OSError, ProjectStateError) as error:
+        write_video_records(project, final_video, args.speaker, args.commercial)
+    except (FileNotFoundError, CodexExecutionError, CommercialFontError, OSError, ProjectStateError) as error:
         print(f"生成に失敗しました: {error}", file=sys.stderr)
         return 1
     finally:
+        font_stack.close()
         if staged_bgm is not None:
             staged_bgm.unlink(missing_ok=True)
 
@@ -347,10 +376,14 @@ def main(argv: list[str] | None = None) -> int:
 
 def revise(args: argparse.Namespace) -> int:
     project = ProjectPaths(args.project_root.resolve())
+    font_stack = ExitStack()
     try:
         project.require_revision_assets()
         target_video = recorded_video_path(project)
         speaker = recorded_speaker(project)
+        commercial = recorded_commercial_mode(project)
+        if commercial:
+            project.require_commercial_font_assets()
         bgm = recorded_bgm(project)
         temporary_video = project.output / "video.mp4"
         if temporary_video.exists():
@@ -361,56 +394,78 @@ def revise(args: argparse.Namespace) -> int:
         previous_videos = {
             path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
         }
+        commercial_env = font_stack.enter_context(
+            commercial_font_environment() if commercial else nullcontext(None)
+        )
         backup = RevisionBackup(
             project,
             target_video,
             Path(tempfile.mkdtemp(prefix="utsuroclip-revise-")),
             previous_videos,
         )
+        return _revise_with_fonts(
+            args, project, target_video, speaker, bgm, backup, previous_videos, commercial_env
+        )
+    except (FileNotFoundError, CodexExecutionError, CommercialFontError, OSError, ProjectStateError) as error:
+        print(f"修正に失敗しました: {error}", file=sys.stderr)
+        return 1
+    finally:
+        font_stack.close()
+
+
+def _revise_with_fonts(
+    args: argparse.Namespace,
+    project: ProjectPaths,
+    target_video: Path,
+    speaker: str,
+    bgm: Path | None,
+    backup: RevisionBackup,
+    previous_videos: set[Path],
+    commercial_env: dict[str, str] | None,
+) -> int:
+    commercial = commercial_env is not None
+    try:
+        backup.create()
+    except OSError:
+        shutil.rmtree(backup.directory, ignore_errors=True)
+        raise
+    try:
+        tools_before = project.tools_snapshot()
         try:
-            backup.create()
-        except OSError:
-            shutil.rmtree(backup.directory, ignore_errors=True)
-            raise
+            CodexRunner(project, args.codex_bin, speaker, commercial_env).run_revision(args.prompt, target_video)
+        finally:
+            project.require_tools_unchanged(tools_before)
+        if commercial:
+            validate_scene_sources(project.work / "scenes")
+        generated_video = generated_video_path(project, previous_videos, "修正版の動画")
+        revised_video = revised_video_path(target_video)
+        if generated_video != revised_video and revised_video.exists():
+            raise CodexExecutionError(
+                f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
+            )
+        if bgm is not None:
+            mix_bgm(generated_video, bgm)
+        if generated_video != revised_video:
+            generated_video.rename(revised_video)
+        write_video_records(project, revised_video, speaker, commercial)
+    except Exception as error:
         try:
-            tools_before = project.tools_snapshot()
-            try:
-                CodexRunner(project, args.codex_bin, speaker).run_revision(args.prompt, target_video)
-            finally:
-                project.require_tools_unchanged(tools_before)
-            generated_video = generated_video_path(project, previous_videos, "修正版の動画")
-            revised_video = revised_video_path(target_video)
-            if generated_video != revised_video and revised_video.exists():
-                raise CodexExecutionError(
-                    f"同名の修正版動画が既に存在するため上書きしません: {revised_video}"
-                )
-            if bgm is not None:
-                mix_bgm(generated_video, bgm)
-            if generated_video != revised_video:
-                generated_video.rename(revised_video)
-            write_video_records(project, revised_video, speaker)
-        except Exception as error:
-            try:
-                backup.restore()
-            except OSError as restore_error:
-                print(
-                    f"修正に失敗しました: {error}。"
-                    f"さらに修正前の制作素材の復元に失敗しました: {restore_error}。"
-                    f"バックアップ: {backup.directory}",
-                    file=sys.stderr,
-                )
-                return 1
-            shutil.rmtree(backup.directory, ignore_errors=True)
+            backup.restore()
+        except OSError as restore_error:
             print(
-                f"修正に失敗しました: {error}。修正前の制作素材を復元しました。",
+                f"修正に失敗しました: {error}。"
+                f"さらに修正前の制作素材の復元に失敗しました: {restore_error}。"
+                f"バックアップ: {backup.directory}",
                 file=sys.stderr,
             )
             return 1
         shutil.rmtree(backup.directory, ignore_errors=True)
-    except (FileNotFoundError, CodexExecutionError, OSError, ProjectStateError) as error:
-        print(f"修正に失敗しました: {error}", file=sys.stderr)
+        print(
+            f"修正に失敗しました: {error}。修正前の制作素材を復元しました。",
+            file=sys.stderr,
+        )
         return 1
-
+    shutil.rmtree(backup.directory, ignore_errors=True)
     print(f"修正完了: {revised_video}")
     print(f"工程ログ: {project.logs}")
     return 0

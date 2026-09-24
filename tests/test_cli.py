@@ -10,6 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from utsuroclip.cli import CodexExecutionError, main, mix_bgm, safe_title
+from utsuroclip.commercial_fonts import CommercialFontError
 
 
 class CliTests(unittest.TestCase):
@@ -119,6 +120,41 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertEqual(runner.call_args.args[2], "ずんだもん")
+
+    def test_commercial_generation_records_mode_and_passes_font_environment(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            env = {"FONTCONFIG_FILE": "/tmp/fonts.conf"}
+            (root / "prompts" / "repair-commercial-fonts.md").write_text("repair", encoding="utf-8")
+            from contextlib import nullcontext
+            with patch("utsuroclip.cli.commercial_font_environment", return_value=nullcontext(env)), patch(
+                "utsuroclip.cli.CodexRunner"
+            ) as runner:
+                def generated(_request: Path) -> None:
+                    self.write_generated_artifacts(root)
+                    scene = root / "work" / "scenes" / "scene_001.py"
+                    scene.parent.mkdir(parents=True, exist_ok=True)
+                    scene.write_text('Text("日本語", font="Noto Sans CJK JP")')
+
+                runner.return_value.run_pipeline.side_effect = generated
+                result = main(["generate", str(request), "--project-root", str(root), "--commercial"])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(runner.call_args.args[3], env)
+            self.assertEqual((root / "work" / "logs" / "commercial-mode.txt").read_text(), "commercial\n")
+
+    def test_commercial_preflight_does_not_delete_existing_work(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            artifact = root / "work" / "audio" / "scene_001.wav"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_bytes(b"existing")
+            with patch("utsuroclip.cli.commercial_font_environment", side_effect=CommercialFontError("missing")):
+                result = main(["generate", str(request), "--project-root", str(root), "--commercial", "--yes"])
+            self.assertEqual(result, 1)
+            self.assertEqual(artifact.read_bytes(), b"existing")
 
     def test_generate_retains_and_mixes_bgm_from_work_directory(self) -> None:
         with TemporaryDirectory() as temp:
@@ -347,6 +383,25 @@ class CliTests(unittest.TestCase):
                 (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
                 f"output/{revised[0].name}\n",
             )
+
+    def test_revision_inherits_commercial_mode(self) -> None:
+        from contextlib import nullcontext
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_revision_artifacts(root)
+            (root / "work" / "logs" / "commercial-mode.txt").write_text("commercial\n")
+            (root / "prompts" / "repair-commercial-fonts.md").write_text("repair", encoding="utf-8")
+            env = {"FONTCONFIG_FILE": "/tmp/fonts.conf"}
+            with patch("utsuroclip.cli.commercial_font_environment", return_value=nullcontext(env)), patch(
+                "utsuroclip.cli.CodexRunner"
+            ) as runner:
+                runner.return_value.run_revision.side_effect = lambda _prompt, _target: (
+                    root / "output" / "video.mp4"
+                ).touch()
+                result = main(["revise", "-p", "修正", "--project-root", str(root)])
+            self.assertEqual(result, 0)
+            self.assertEqual(runner.call_args.args[3], env)
+            self.assertEqual((root / "work" / "logs" / "commercial-mode.txt").read_text(), "commercial\n")
 
     def test_revise_reapplies_retained_bgm(self) -> None:
         with TemporaryDirectory() as temp:
