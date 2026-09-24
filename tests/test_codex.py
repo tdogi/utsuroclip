@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from utsuroclip.codex import CodexExecutionError, CodexRunner, TokenUsage
+from utsuroclip.codex import CodexExecutionError, CodexRunner, StageSummary, TokenUsage
 from utsuroclip.project import ProjectPaths
 
 
@@ -92,6 +92,138 @@ class CodexRunnerTests(unittest.TestCase):
 
         self.assertIn("ナレーション話者: 四国めたん", prompt)
         self.assertIn("--speaker", prompt)
+
+    def test_commercial_mode_reaches_video_stages_only(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            runner = CodexRunner(project, commercial_env={"FONTCONFIG_FILE": "/tmp/fonts.conf"})
+            (project.work / "scenes" / "scene_001.py").write_text('Text("A")', encoding="utf-8")
+            video_prompt = runner._build_prompt(
+                "generate-video", project.prompts / "generate-video.md", request
+            )
+            research_prompt = runner._build_prompt(
+                "research", project.prompts / "research.md", request
+            )
+            self.assertIn("商用利用モード: 有効", video_prompt)
+            self.assertIn("Noto Sans Math", video_prompt)
+            self.assertNotIn("商用利用モード", research_prompt)
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
+                "utsuroclip.codex.subprocess.Popen",
+                side_effect=[FakeCodexProcess([]) for _ in range(4)],
+            ) as popen, redirect_stdout(StringIO()):
+                runner.run_pipeline(request)
+            self.assertNotIn("env", popen.call_args_list[0].kwargs)
+            self.assertEqual(popen.call_args_list[2].kwargs["env"]["FONTCONFIG_FILE"], "/tmp/fonts.conf")
+            self.assertEqual(popen.call_args_list[3].kwargs["env"]["FONTCONFIG_FILE"], "/tmp/fonts.conf")
+
+    def test_commercial_mode_repairs_disallowed_font_before_self_check(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            scene = project.work / "scenes" / "scene_001.py"
+            rendered = project.work / "rendered" / "scene_001.mp4"
+            stages = []
+
+            def run_stage(stage, *_args, **_kwargs):
+                stages.append(stage)
+                if stage == "generate-video":
+                    scene.write_text('Text("A", font="DejaVu Sans")', encoding="utf-8")
+                if stage == "repair-commercial-fonts-1":
+                    scene.write_text('Text("A", font="Noto Sans CJK JP")', encoding="utf-8")
+                    rendered.write_bytes(b"rerendered")
+                return StageSummary(stage, 0, TokenUsage())
+
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch.object(
+                CodexRunner, "_run_stage", side_effect=run_stage
+            ), redirect_stdout(StringIO()):
+                CodexRunner(project, commercial_env={"FONTCONFIG_FILE": "/tmp/fonts.conf"}).run_pipeline(request)
+
+            self.assertEqual(stages, [
+                "research", "write-script", "generate-video", "repair-commercial-fonts-1",
+                "self-check-video",
+            ])
+
+    def test_commercial_mode_rechecks_after_self_check_and_limits_repairs(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            scene = project.work / "scenes" / "scene_001.py"
+            rendered = project.work / "rendered" / "scene_001.mp4"
+            stages = []
+
+            def run_stage(stage, *_args, **_kwargs):
+                stages.append(stage)
+                if stage == "generate-video":
+                    scene.write_text('Text("A", font="Noto Sans CJK JP")', encoding="utf-8")
+                if stage == "self-check-video":
+                    scene.write_text('Text("A", font="DejaVu Sans")', encoding="utf-8")
+                if stage == "repair-commercial-fonts-1":
+                    scene.write_text('Text("A", font="Noto Sans Math")', encoding="utf-8")
+                    rendered.write_bytes(b"rerendered")
+                return StageSummary(stage, 0, TokenUsage())
+
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch.object(
+                CodexRunner, "_run_stage", side_effect=run_stage
+            ), redirect_stdout(StringIO()):
+                CodexRunner(project, commercial_env={"FONTCONFIG_FILE": "/tmp/fonts.conf"}).run_pipeline(request)
+            self.assertEqual(stages[-3:], [
+                "self-check-video", "repair-commercial-fonts-1", "self-check-video-font-repair-1",
+            ])
+
+            scene.write_text('Text("A", font="DejaVu Sans")', encoding="utf-8")
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch.object(
+                CodexRunner, "_run_stage", return_value=StageSummary("stage", 0, TokenUsage())
+            ), redirect_stdout(StringIO()):
+                with self.assertRaisesRegex(CodexExecutionError, "修正できませんでした"):
+                    CodexRunner(project, commercial_env={"FONTCONFIG_FILE": "/tmp/fonts.conf"})._repair_font_issues(
+                        [], 2, request
+                    )
+
+    def test_commercial_revision_repairs_font_before_self_check(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, _ = self.make_project(Path(temp))
+            (project.prompts / "revise-video.md").write_text("revise", encoding="utf-8")
+            (project.prompts / "repair-commercial-fonts.md").write_text("repair", encoding="utf-8")
+            target = project.output / "previous.mp4"
+            target.touch()
+            scene = project.work / "scenes" / "scene_001.py"
+            rendered = project.work / "rendered" / "scene_001.mp4"
+            stages = []
+
+            def run_stage(stage, *_args, **kwargs):
+                stages.append(stage)
+                if stage == "revise-video":
+                    scene.write_text('Text("A", font="DejaVu Sans")', encoding="utf-8")
+                if stage == "repair-commercial-fonts-1":
+                    self.assertIn("DejaVu Sans", kwargs["font_issue"])
+                    scene.write_text('Text("A", font="Noto Sans CJK JP")', encoding="utf-8")
+                    rendered.write_bytes(b"rerendered")
+                return StageSummary(stage, 0, TokenUsage())
+
+            with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch.object(
+                CodexRunner, "_run_stage", side_effect=run_stage
+            ), redirect_stdout(StringIO()):
+                CodexRunner(project, commercial_env={"FONTCONFIG_FILE": "/tmp/fonts.conf"}).run_revision(
+                    "修正", target
+                )
+            self.assertEqual(stages, ["revise-video", "repair-commercial-fonts-1", "self-check-video"])
+
+    def test_commercial_repair_requires_updated_rendered_scene(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            scene = project.work / "scenes" / "scene_001.py"
+            scene.write_text('Text("A", font="DejaVu Sans")', encoding="utf-8")
+            stages = []
+
+            def run_stage(stage, *_args, **_kwargs):
+                stages.append(stage)
+                scene.write_text('Text("A", font="Noto Sans CJK JP")', encoding="utf-8")
+                return StageSummary(stage, 0, TokenUsage())
+
+            with patch.object(CodexRunner, "_run_stage", side_effect=run_stage):
+                with self.assertRaisesRegex(CodexExecutionError, "再レンダリング"):
+                    CodexRunner(project, commercial_env={"FONTCONFIG_FILE": "/tmp/fonts.conf"})._repair_font_issues(
+                        [], 2, request
+                    )
+            self.assertEqual(stages, ["repair-commercial-fonts-1", "repair-commercial-fonts-2"])
 
     def test_does_not_include_speaker_in_non_video_prompt(self) -> None:
         with TemporaryDirectory() as temp:

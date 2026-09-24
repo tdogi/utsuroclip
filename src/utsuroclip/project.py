@@ -52,6 +52,11 @@ class ProjectPaths:
         """Relative path of the BGM retained for future revisions."""
         return self.logs / "bgm.txt"
 
+    @property
+    def commercial_mode_record(self) -> Path:
+        """Font policy used for the video currently backed by ``work/``."""
+        return self.logs / "commercial-mode.txt"
+
     def intermediate_artifacts(self) -> list[Path]:
         """Return generated files that would be removed before a new run."""
         if not self.work.is_dir():
@@ -119,6 +124,11 @@ class ProjectPaths:
             raise FileNotFoundError(
                 "修正に必要な制作素材または記録が見つかりません: " + ", ".join(missing)
             )
+
+    def require_commercial_font_assets(self) -> None:
+        prompt = self.prompts / "repair-commercial-fonts.md"
+        if not prompt.is_file():
+            raise FileNotFoundError(f"商用利用モードの修正プロンプトが見つかりません: {prompt}")
 
     def tools_snapshot(self) -> dict[Path, str]:
         """Return a content-aware snapshot of the tools supplied by UtsuroClip."""

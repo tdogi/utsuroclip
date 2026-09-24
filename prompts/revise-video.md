@@ -5,6 +5,7 @@
 1. `work/script/script.md`、`work/scenes/`、`work/audio/`、`work/rendered/`、および対象MP4を確認し、修正指示に対応するシーン・時間帯・要素を特定する。不明確な指示は、既存の構成をなるべく維持する妥当な解釈で処理する。
 2. 影響する制作素材だけを修正する。ナレーション内容を変更する場合は台本と対応する音声を更新し、視覚表現・文字・配置・演出を変更する場合は対応するManimコードとシーン映像を更新する。影響しないシーンは維持する。
 3. 更新したシーンは、Manim Community Edition 0.21.0 を実行する `python tools/manim_renderer.py` で再レンダリングし、必要に応じて `python tools/voicevox.py --speaker <実行コンテキストで指定された話者>` で音声を再生成する。
+   * 実行コンテキストで商用利用モードが有効な場合、既存シーンと更新シーンの文字に指定された Noto フォントのみを使う。数式記号は `Text` と `Noto Sans Math` を使用し、`Tex` / `MathTex` や未確認フォントは使わない。フォントのエラーが出た場合は、許可済みフォントや意味を保つ別の表現に修正して再レンダリングする。解決できない場合のみ失敗を報告する。
 
 更新した素材とシーン数を報告してください。`python tools/ffmpeg.py mux` と `python tools/ffmpeg.py concat` は実行せず、`output/video.mp4` を作成しないでください。対象の完成MP4を削除・上書きしてはいけません。
 
