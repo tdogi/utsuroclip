@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("scene_class", help="レンダリングする Scene クラス名")
     parser.add_argument("--output", type=Path, required=True, help="出力 MP4 パス")
     parser.add_argument("--manim-bin", default="manim", help="Manim 実行ファイル名またはパス")
-    parser.add_argument("--quality", choices=("l", "m", "h", "p", "k"), default="h", help="Manim 品質")
+    parser.add_argument("--quality", choices=("l", "m", "h", "p", "k"), default="p", help="Manim 品質")
     args = parser.parse_args(argv)
     if not args.scene_file.is_file():
         parser.error(f"シーンファイルが見つかりません: {args.scene_file}")
