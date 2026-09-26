@@ -435,7 +435,7 @@ utsuroclip generate input/request.md
 * Codex CLIを起動し、調査・台本作成・動画生成処理を開始する
 * `output/video.mp4` と `work/script/title.txt` が生成されたことを確認し、タイトルを安全なファイル名へ変換して `output/YYYYMMDDhhmmss_タイトル.mp4` へ改名する。同名の完成動画は上書きしない
 * 改名した完成動画の相対パスと選択話者を、それぞれ `work/logs/final-video.txt` と `work/logs/speaker.txt` に記録する
-* `revise -p` では上記記録に対応する現在の制作素材だけを対象にCodexへ修正を依頼し、元動画を保持した `元動画名_revised_YYYYMMDDhhmmss.mp4` を出力する
+* `revise -p` では上記記録に対応する現在の制作素材だけを対象にCodexへ修正を依頼し、元動画を保持した `元動画名_revised_YYYYMMDDhhmmss.mp4` を出力する。連続修正時は過去の修正時刻をファイル名から取り除き、最新の修正時刻だけを付ける
 * 実行結果、工程ごとの進捗、経過時間、Codexが返したトークン使用量を表示する。使用量が得られない場合はその旨を表示する
 
 ---

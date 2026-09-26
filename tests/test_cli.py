@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from utsuroclip.cli import CodexExecutionError, bgm_volume, main, mix_bgm, safe_title
+from utsuroclip.cli import CodexExecutionError, bgm_volume, main, mix_bgm, revised_video_path, safe_title
 from utsuroclip.commercial_fonts import CommercialFontError
 
 
@@ -428,6 +428,40 @@ class CliTests(unittest.TestCase):
                 (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
                 f"output/{revised[0].name}\n",
             )
+
+    def test_repeated_revisions_keep_only_the_latest_revision_timestamp(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            original = self.write_revision_artifacts(root)
+            timestamps = (
+                datetime(2026, 1, 2, 3, 4, 5),
+                datetime(2026, 1, 3, 4, 5, 6),
+                datetime(2026, 1, 4, 5, 6, 7),
+            )
+            with patch("utsuroclip.cli.datetime") as clock, patch("utsuroclip.cli.CodexRunner") as runner:
+                clock.now.side_effect = timestamps
+                runner.return_value.run_revision.side_effect = lambda _prompt, _target: (
+                    root / "output" / "video.mp4"
+                ).touch()
+                for timestamp in timestamps:
+                    self.assertEqual(main(["revise", "-p", "修正", "--project-root", str(root)]), 0)
+                    name = f"20260101000000_topic_revised_{timestamp:%Y%m%d%H%M%S}.mp4"
+                    self.assertEqual(
+                        (root / "work" / "logs" / "final-video.txt").read_text(encoding="utf-8"),
+                        f"output/{name}\n",
+                    )
+                    self.assertTrue((root / "output" / name).is_file())
+
+            self.assertEqual(runner.return_value.run_revision.call_count, 3)
+            self.assertTrue(original.is_file())
+            self.assertEqual(len(list((root / "output").glob("*.mp4"))), 4)
+
+    def test_revised_video_path_removes_older_stacked_timestamps(self) -> None:
+        target = Path("20260101000000_topic_revised_20260102030405_revised_20260103040506.mp4")
+        with patch("utsuroclip.cli.datetime") as clock:
+            clock.now.return_value = datetime(2026, 1, 4, 5, 6, 7)
+            revised = revised_video_path(target)
+        self.assertEqual(revised.name, "20260101000000_topic_revised_20260104050607.mp4")
 
     def test_revision_inherits_commercial_mode(self) -> None:
         from contextlib import nullcontext
