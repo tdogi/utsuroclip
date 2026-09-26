@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import math
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -199,7 +200,8 @@ def generated_video_path(
 
 def revised_video_path(target: Path) -> Path:
     """Return a distinct, clearly marked output path for a revision."""
-    return target.with_name(f"{target.stem}_revised_{datetime.now():%Y%m%d%H%M%S}.mp4")
+    original_stem = re.sub(r"(?:_revised_[0-9]{14})+$", "", target.stem)
+    return target.with_name(f"{original_stem}_revised_{datetime.now():%Y%m%d%H%M%S}.mp4")
 
 
 def write_video_records(project: ProjectPaths, video: Path, speaker: str, commercial: bool = False) -> None:
