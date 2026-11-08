@@ -27,6 +27,57 @@ DEFAULT_SPEAKER = "春日部つむぎ"
 DEFAULT_BGM_VOLUME = 0.15
 
 
+def requested_duration(request: Path) -> float | None:
+    """Read an optional, single target duration from the video overview."""
+    content = request.read_text(encoding="utf-8")
+    section = re.search(
+        r"(?ms)^#{1,6}\s*動画時間\s*\n(.*?)(?=^#{1,6}\s|\Z)", content
+    )
+    if section is None:
+        return None
+    value = unicodedata.normalize("NFKC", section.group(1)).strip()
+    value = re.sub(r"^(?:約\s*)?", "", value)
+    value = re.sub(r"\s*(?:程度|前後|くらい|ぐらい)\s*$", "", value).strip()
+    match = re.fullmatch(r"(?:(\d+)\s*分)?\s*(?:(\d+)\s*秒)?", value)
+    if match is None or not any(match.groups()):
+        raise CodexExecutionError(
+            "動画時間を読み取れません。例: 約90秒、1分30秒、2分"
+        )
+    seconds = int(match.group(1) or 0) * 60 + int(match.group(2) or 0)
+    if seconds <= 0:
+        raise CodexExecutionError("動画時間は0秒より長く指定してください")
+    return float(seconds)
+
+
+def validate_video_duration(video: Path, target_seconds: float) -> float:
+    """Measure the final MP4 and reject durations outside the inclusive 10% range."""
+    if shutil.which("ffprobe") is None:
+        raise CodexExecutionError("動画時間の確認に必要な ffprobe が見つかりません")
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(video),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    try:
+        actual_seconds = float(result.stdout.strip())
+    except ValueError:
+        actual_seconds = math.nan
+    if result.returncode or not math.isfinite(actual_seconds) or actual_seconds <= 0:
+        raise CodexExecutionError(
+            f"完成動画の時間を測定できません: {video} "
+            f"({result.stderr.strip() or 'ffprobe エラー'})"
+        )
+    minimum, maximum = target_seconds * 0.9, target_seconds * 1.1
+    if not minimum <= actual_seconds <= maximum:
+        raise CodexExecutionError(
+            f"完成動画の時間が指定範囲外です: 指定 {target_seconds:g}秒、"
+            f"実測 {actual_seconds:.2f}秒、許容範囲 {minimum:g}〜{maximum:g}秒"
+        )
+    return actual_seconds
+
+
 def bgm_volume(value: str) -> float:
     try:
         volume = float(value)
@@ -345,6 +396,9 @@ def main(argv: list[str] | None = None) -> int:
     staged_bgm: Path | None = None
     font_stack = ExitStack()
     try:
+        target_seconds = requested_duration(request)
+        if target_seconds is not None and shutil.which("ffprobe") is None:
+            raise CodexExecutionError("動画時間の確認に必要な ffprobe が見つかりません")
         commercial_env = font_stack.enter_context(
             commercial_font_environment() if args.commercial else nullcontext(None)
         )
@@ -392,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         if retained_bgm is not None:
             mix_bgm(generated_video, retained_bgm, recorded_bgm_volume(project))
+        if target_seconds is not None:
+            validate_video_duration(generated_video, target_seconds)
         if generated_video != final_video:
             generated_video.rename(final_video)
         write_video_records(project, final_video, args.speaker, args.commercial)
