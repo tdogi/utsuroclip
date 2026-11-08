@@ -10,11 +10,81 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from utsuroclip.cli import CodexExecutionError, bgm_volume, main, mix_bgm, revised_video_path, safe_title
+from utsuroclip.cli import (
+    CodexExecutionError, bgm_volume, main, mix_bgm, requested_duration,
+    revised_video_path, safe_title, validate_video_duration,
+)
 from utsuroclip.commercial_fonts import CommercialFontError
 
 
 class CliTests(unittest.TestCase):
+    def test_requested_duration_reads_common_formats_and_allows_omission(self) -> None:
+        with TemporaryDirectory() as temp:
+            request = Path(temp) / "request.md"
+            for value, expected in (("約90秒", 90), ("１分３０秒", 90), ("2分", 120)):
+                with self.subTest(value=value):
+                    request.write_text(f"# 動画概要\n\n## 動画時間\n\n{value}\n", encoding="utf-8")
+                    self.assertEqual(requested_duration(request), expected)
+            request.write_text("# 動画概要\n\n## テーマ\n例\n", encoding="utf-8")
+            self.assertIsNone(requested_duration(request))
+
+    def test_requested_duration_rejects_unreadable_target(self) -> None:
+        with TemporaryDirectory() as temp:
+            request = Path(temp) / "request.md"
+            request.write_text("## 動画時間\n適当に短く\n", encoding="utf-8")
+            with self.assertRaisesRegex(CodexExecutionError, "読み取れません"):
+                requested_duration(request)
+
+    def test_video_duration_includes_boundaries_and_rejects_invalid_probe(self) -> None:
+        with patch("utsuroclip.cli.shutil.which", return_value="/usr/bin/ffprobe"), patch(
+            "utsuroclip.cli.subprocess.run"
+        ) as run:
+            run.return_value.returncode = 0
+            run.return_value.stderr = ""
+            for seconds in (81, 99):
+                run.return_value.stdout = str(seconds)
+                self.assertEqual(validate_video_duration(Path("video.mp4"), 90), seconds)
+            run.return_value.stdout = "80.99"
+            with self.assertRaisesRegex(CodexExecutionError, "指定 90秒、実測 80.99秒"):
+                validate_video_duration(Path("video.mp4"), 90)
+            run.return_value.stdout = "nan"
+            with self.assertRaisesRegex(CodexExecutionError, "測定できません"):
+                validate_video_duration(Path("video.mp4"), 90)
+
+    def test_generate_rejects_short_video_before_recording_completion(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            request.write_text("## 動画時間\n約90秒\n", encoding="utf-8")
+            with patch("utsuroclip.cli.CodexRunner") as runner, patch(
+                "utsuroclip.cli.shutil.which", return_value="/usr/bin/ffprobe"
+            ), patch("utsuroclip.cli.subprocess.run") as probe:
+                runner.return_value.run_pipeline.side_effect = lambda _request: self.write_generated_artifacts(root)
+                probe.return_value.returncode = 0
+                probe.return_value.stdout = "75.0\n"
+                probe.return_value.stderr = ""
+                result = main(["generate", str(request), "--project-root", str(root)])
+            self.assertEqual(result, 1)
+            self.assertTrue((root / "output" / "video.mp4").is_file())
+            self.assertFalse((root / "work" / "logs" / "final-video.txt").exists())
+
+    def test_generate_accepts_video_within_requested_duration(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = self.make_project(root)
+            request.write_text("## 動画時間\n約90秒\n", encoding="utf-8")
+            with patch("utsuroclip.cli.CodexRunner") as runner, patch(
+                "utsuroclip.cli.shutil.which", return_value="/usr/bin/ffprobe"
+            ), patch("utsuroclip.cli.subprocess.run") as probe:
+                runner.return_value.run_pipeline.side_effect = lambda _request: self.write_generated_artifacts(root)
+                probe.return_value.returncode = 0
+                probe.return_value.stdout = "95.0\n"
+                probe.return_value.stderr = ""
+                result = main(["generate", str(request), "--project-root", str(root)])
+            self.assertEqual(result, 0)
+            self.assertEqual(len(list((root / "output").glob("*_topic.mp4"))), 1)
+            self.assertTrue((root / "work" / "logs" / "final-video.txt").exists())
+
     def test_bgm_volume_rejects_negative_and_non_finite_values(self) -> None:
         for value in ("-0.1", "nan", "inf", "not-a-number"):
             with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
