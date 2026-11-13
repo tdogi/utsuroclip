@@ -82,6 +82,18 @@ class CodexRunnerTests(unittest.TestCase):
             self.assertIn("[research] 実行: manim scene.py", stdout.getvalue())
             self.assertIn("input 400", stdout.getvalue())
             self.assertIn("[research] progress", stderr.getvalue())
+            self.assertEqual(project.target_duration_record.read_text(), "90\n")
+
+    def test_target_duration_prefers_explicit_time_and_keeps_inferred_time(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            runner = CodexRunner(project)
+            project.target_duration_record.write_text("65\n", encoding="utf-8")
+            runner._finalize_target_duration(request)
+            self.assertEqual(project.target_duration_record.read_text(), "65\n")
+            request.write_text("## 動画時間\nおよそ1分半で\n", encoding="utf-8")
+            runner._finalize_target_duration(request)
+            self.assertEqual(project.target_duration_record.read_text(), "90\n")
 
     def test_includes_selected_speaker_in_video_generation_prompt(self) -> None:
         with TemporaryDirectory() as temp:
