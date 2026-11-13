@@ -378,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         explicit_seconds = requested_duration(request)
         if explicit_seconds is not None and explicit_seconds <= 0:
             raise CodexExecutionError("動画時間は0秒より長く指定してください")
-        if shutil.which("ffprobe") is None:
+        if explicit_seconds is not None and shutil.which("ffprobe") is None:
             raise CodexExecutionError("動画時間の確認に必要な ffprobe が見つかりません")
         commercial_env = font_stack.enter_context(
             commercial_font_environment() if args.commercial else nullcontext(None)

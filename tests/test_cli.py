@@ -116,6 +116,8 @@ class CliTests(unittest.TestCase):
                 record.write_text("60\n", encoding="utf-8")
 
             with patch("utsuroclip.cli.CodexRunner") as runner, patch(
+                "utsuroclip.cli.shutil.which", return_value="/usr/bin/ffprobe"
+            ), patch(
                 "utsuroclip.cli.subprocess.run"
             ) as probe:
                 runner.return_value.run_pipeline.side_effect = generated
