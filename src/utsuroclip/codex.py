@@ -15,6 +15,7 @@ from time import monotonic
 from typing import Iterator, TextIO
 
 from .commercial_fonts import CommercialFontError, validate_scene_sources
+from .duration import read_duration_record, requested_duration
 from .project import ProjectPaths
 
 
@@ -89,6 +90,8 @@ class CodexRunner:
                 summaries.append(
                     self._run_stage(stage, self.project.prompts / prompt_name, request)
                 )
+                if stage == "write-script":
+                    self._finalize_target_duration(request)
                 if self.commercial_env and stage == "generate-video":
                     repairs_left, _ = self._repair_font_issues(summaries, repairs_left, request)
                 if self.commercial_env and stage == "self-check-video":
@@ -101,6 +104,15 @@ class CodexRunner:
             raise
         finally:
             self._print_pipeline_summary(summaries, monotonic() - started_at)
+
+    def _finalize_target_duration(self, request: Path) -> None:
+        """Give later stages one target, with explicit instructions taking priority."""
+        explicit = requested_duration(request)
+        inferred = read_duration_record(self.project.target_duration_record)
+        seconds = explicit if explicit is not None and explicit > 0 else inferred or 90.0
+        self.project.target_duration_record.parent.mkdir(parents=True, exist_ok=True)
+        self.project.target_duration_record.write_text(f"{seconds:g}\n", encoding="utf-8")
+        print(f"目標動画時間: {seconds:g}秒", flush=True)
 
     def run_revision(self, instruction: str, target_video: Path) -> None:
         """Ask Codex to revise the retained production set and render a new video."""

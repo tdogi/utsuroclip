@@ -20,33 +20,12 @@ from .commercial_fonts import (
     CommercialFontError, commercial_font_environment, validate_scene_sources,
 )
 from .project import ProjectPaths, ProjectStateError
+from .duration import read_duration_record, requested_duration
 
 
 SPEAKERS = ("ずんだもん", "四国めたん", "春日部つむぎ")
 DEFAULT_SPEAKER = "春日部つむぎ"
 DEFAULT_BGM_VOLUME = 0.15
-
-
-def requested_duration(request: Path) -> float | None:
-    """Read an optional, single target duration from the video overview."""
-    content = request.read_text(encoding="utf-8")
-    section = re.search(
-        r"(?ms)^#{1,6}\s*動画時間\s*\n(.*?)(?=^#{1,6}\s|\Z)", content
-    )
-    if section is None:
-        return None
-    value = unicodedata.normalize("NFKC", section.group(1)).strip()
-    value = re.sub(r"^(?:約\s*)?", "", value)
-    value = re.sub(r"\s*(?:程度|前後|くらい|ぐらい)\s*$", "", value).strip()
-    match = re.fullmatch(r"(?:(\d+)\s*分)?\s*(?:(\d+)\s*秒)?", value)
-    if match is None or not any(match.groups()):
-        raise CodexExecutionError(
-            "動画時間を読み取れません。例: 約90秒、1分30秒、2分"
-        )
-    seconds = int(match.group(1) or 0) * 60 + int(match.group(2) or 0)
-    if seconds <= 0:
-        raise CodexExecutionError("動画時間は0秒より長く指定してください")
-    return float(seconds)
 
 
 def validate_video_duration(video: Path, target_seconds: float) -> float:
@@ -396,8 +375,10 @@ def main(argv: list[str] | None = None) -> int:
     staged_bgm: Path | None = None
     font_stack = ExitStack()
     try:
-        target_seconds = requested_duration(request)
-        if target_seconds is not None and shutil.which("ffprobe") is None:
+        explicit_seconds = requested_duration(request)
+        if explicit_seconds is not None and explicit_seconds <= 0:
+            raise CodexExecutionError("動画時間は0秒より長く指定してください")
+        if explicit_seconds is not None and shutil.which("ffprobe") is None:
             raise CodexExecutionError("動画時間の確認に必要な ffprobe が見つかりません")
         commercial_env = font_stack.enter_context(
             commercial_font_environment() if args.commercial else nullcontext(None)
@@ -446,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         if retained_bgm is not None:
             mix_bgm(generated_video, retained_bgm, recorded_bgm_volume(project))
+        target_seconds = explicit_seconds or read_duration_record(project.target_duration_record)
         if target_seconds is not None:
             validate_video_duration(generated_video, target_seconds)
         if generated_video != final_video:

@@ -38,6 +38,10 @@ class ProjectPaths:
         return self.work / "script" / "title.txt"
 
     @property
+    def target_duration_record(self) -> Path:
+        return self.work / "script" / "target-duration.txt"
+
+    @property
     def final_video_record(self) -> Path:
         """One-line relative path of the video currently backed by ``work/``."""
         return self.logs / "final-video.txt"
