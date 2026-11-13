@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 from urllib.error import URLError
@@ -18,6 +19,7 @@ SPEAKERS = {
     "春日部つむぎ": 8,
 }
 DEFAULT_SPEAKER = "春日部つむぎ"
+DEFAULT_SPEED_SCALE = 1.05
 
 
 def post_json(url: str, payload: bytes = b"") -> bytes:
@@ -27,13 +29,26 @@ def post_json(url: str, payload: bytes = b"") -> bytes:
         return response.read()
 
 
-def synthesize(text: str, speaker: int, base_url: str) -> bytes:
+def speed_scale(value: str) -> float:
+    try:
+        speed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("読み上げ速度は0より大きい数値で指定してください") from error
+    if not math.isfinite(speed) or speed <= 0:
+        raise argparse.ArgumentTypeError("読み上げ速度は0より大きい有限な数値で指定してください")
+    return speed
+
+
+def synthesize(
+    text: str, speaker: int, base_url: str, speed: float = DEFAULT_SPEED_SCALE
+) -> bytes:
     endpoint = base_url.rstrip("/")
     query = urlencode({"text": text, "speaker": speaker})
-    audio_query = post_json(f"{endpoint}/audio_query?{query}")
+    audio_query = json.loads(post_json(f"{endpoint}/audio_query?{query}"))
+    audio_query["speedScale"] = speed
     return post_json(
         f"{endpoint}/synthesis?speaker={speaker}",
-        json.dumps(json.loads(audio_query)).encode("utf-8"),
+        json.dumps(audio_query).encode("utf-8"),
     )
 
 
@@ -49,6 +64,10 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_SPEAKER,
         help=f"話者（既定値: {DEFAULT_SPEAKER}）",
     )
+    parser.add_argument(
+        "--speed-scale", type=speed_scale, default=DEFAULT_SPEED_SCALE,
+        help=f"読み上げ速度（既定値: {DEFAULT_SPEED_SCALE}。明示的な指示がある場合のみ変更）",
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:50021", help="VOICEVOX Engine の URL")
     args = parser.parse_args(argv)
 
@@ -56,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     if not text.strip():
         parser.error("読み上げる文章は空にできません")
     try:
-        wav = synthesize(text, SPEAKERS[args.speaker], args.base_url)
+        wav = synthesize(text, SPEAKERS[args.speaker], args.base_url, args.speed_scale)
     except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
         print(f"VOICEVOX Engine との通信に失敗しました: {error}", file=sys.stderr)
         return 1
