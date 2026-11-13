@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -33,6 +34,12 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(result, b"WAV")
         self.assertIn("/audio_query?", post.call_args_list[0].args[0])
         self.assertEqual(post.call_args_list[1].args[0], "http://localhost:50021/synthesis?speaker=3")
+        self.assertEqual(json.loads(post.call_args_list[1].args[1])["speedScale"], 1.05)
+
+    def test_voicevox_uses_explicit_speed_when_requested(self) -> None:
+        with patch.object(voicevox, "post_json", side_effect=[b'{"speedScale": 1}', b"WAV"]) as post:
+            voicevox.synthesize("こんにちは", 3, "http://localhost:50021", 1.2)
+        self.assertEqual(json.loads(post.call_args_list[1].args[1])["speedScale"], 1.2)
 
     def test_voicevox_uses_kasukabe_tsumugi_by_default(self) -> None:
         with TemporaryDirectory() as temp:
@@ -42,6 +49,7 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(synthesize.call_args.args[1], 8)
+        self.assertEqual(synthesize.call_args.args[3], 1.05)
 
     def test_voicevox_uses_selected_speaker(self) -> None:
         with TemporaryDirectory() as temp:
@@ -53,6 +61,21 @@ class ToolTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(synthesize.call_args.args[1], 2)
+
+    def test_voicevox_accepts_explicit_speed_option(self) -> None:
+        with TemporaryDirectory() as temp:
+            output = Path(temp) / "scene.wav"
+            with patch.object(voicevox, "synthesize", return_value=b"WAV") as synthesize:
+                result = voicevox.main([
+                    "--text", "こんにちは", "--output", str(output), "--speed-scale", "1.2"
+                ])
+        self.assertEqual(result, 0)
+        self.assertEqual(synthesize.call_args.args[3], 1.2)
+
+    def test_voicevox_rejects_nonpositive_or_nonfinite_speed(self) -> None:
+        for value in ("0", "-1", "nan", "inf"):
+            with self.subTest(value=value), self.assertRaises(SystemExit):
+                voicevox.main(["--text", "こんにちは", "--output", "unused.wav", "--speed-scale", value])
 
     def test_ffmpeg_mux_builds_audio_video_command(self) -> None:
         with TemporaryDirectory() as temp:
