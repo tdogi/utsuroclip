@@ -1,5 +1,5 @@
 # UtsuroClip の動画生成用 Codex 設定。
-model = "gpt-6-sol"
+model = "gpt-6.2-sol"
 model_reasoning_effort = "high"
 model_context_window = 1000000
 
