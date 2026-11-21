@@ -464,7 +464,7 @@ Self Check
 
 CodexはAGENTS、Prompt、Skill、動画概要、中間生成物を参照し、動画生成に必要な処理を進める。
 
-CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Script、Video Generation、Self Checkをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。工程が失敗した場合は同じ工程を再試行し、同一エラーが4回連続すると停止して後続工程を実行しない。エラーが変わった場合は連続回数をリセットする。
+CLIは `codex exec --sandbox workspace-write --json` を使い、Research、Script、Video Generation、Self Checkをそれぞれ独立して順番に起動する。各工程は前工程がファイルへ保存した成果物を読み込む。Codexが受け取ったツール実行エラーは原因を調査・修正して再実行する。Codex工程が失敗した場合は同じ工程を再試行し、CLIの成果物・尺・フォント検証に失敗した場合は、そのエラーをCodexのセルフチェックへ渡して修正する。同一エラーが4回連続すると停止し、エラーが変わった場合は連続回数をリセットする。
 
 `revise` は `revise-video` と `self-check-video` を順番に起動する。動画生成と同じローカルVOICEVOX接続設定を適用し、対象完成MP4、保持済みの制作素材、ユーザーの修正指示をコンテキストとして渡す。Codexは必要なシーンだけを更新・再レンダリングする。セルフチェックで全シーンを確認し、問題があれば修正・再レンダリングしてから一時ファイル `output/video.mp4` を生成する。CLIが存在を確認してから、元動画を上書きしない修正版ファイル名へ変更する。
 

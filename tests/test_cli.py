@@ -498,9 +498,10 @@ class CliTests(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             request = self.make_project(root)
-            with patch("utsuroclip.cli.CodexRunner"):
+            with patch("utsuroclip.cli.CodexRunner") as runner:
                 result = main(["generate", str(request), "--project-root", str(root)])
         self.assertEqual(result, 1)
+        self.assertEqual(runner.return_value.retry_after_cli_error.call_count, 3)
 
     def test_generate_rejects_missing_request(self) -> None:
         with TemporaryDirectory() as temp:

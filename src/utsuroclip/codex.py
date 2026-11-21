@@ -233,13 +233,15 @@ class CodexRunner:
         revision_instruction: str | None = None,
         target_video: Path | None = None,
         font_issue: str | None = None,
+        previous_error: str | None = None,
     ) -> StageSummary:
         consecutive_error = None
         consecutive_failures = 0
         while True:
             try:
                 return self._run_stage_once(
-                    stage, prompt_path, request, revision_instruction, target_video, font_issue
+                    stage, prompt_path, request, revision_instruction, target_video, font_issue,
+                    previous_error,
                 )
             except CodexExecutionError as error:
                 stderr_log = self.project.logs / f"{stage}.stderr.log"
@@ -247,6 +249,7 @@ class CodexRunner:
                 signature = f"{error}\n{stderr}"
                 consecutive_failures = consecutive_failures + 1 if signature == consecutive_error else 1
                 consecutive_error = signature
+                previous_error = str(error)
                 if consecutive_failures >= self.SAME_ERROR_LIMIT:
                     raise
                 print(
@@ -263,9 +266,11 @@ class CodexRunner:
         revision_instruction: str | None = None,
         target_video: Path | None = None,
         font_issue: str | None = None,
+        previous_error: str | None = None,
     ) -> StageSummary:
         prompt = self._build_prompt(
-            stage, prompt_path, request, revision_instruction, target_video, font_issue
+            stage, prompt_path, request, revision_instruction, target_video, font_issue,
+            previous_error,
         )
         final_message = self.project.logs / f"{stage}.final.md"
         stdout_log = self.project.logs / f"{stage}.stdout.log"
@@ -303,6 +308,7 @@ class CodexRunner:
             **options,
         )
         usage = TokenUsage()
+        turn_errors: list[str] = []
         with stdout_log.open("w", encoding="utf-8") as stdout_file, stderr_log.open(
             "w", encoding="utf-8"
         ) as stderr_file:
@@ -311,20 +317,27 @@ class CodexRunner:
                     stdout_file.write(line)
                     stdout_file.flush()
                     usage = usage.add(self._report_json_event(stage, line))
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        event = {}
+                    if event.get("type") == "turn.failed":
+                        turn_errors.append(str(event.get("error") or "Codex turn failed"))
                 else:
                     stderr_file.write(line)
                     stderr_file.flush()
                     self._report_stderr_line(stage, line)
 
         summary = StageSummary(stage, monotonic() - started_at, usage)
-        if process.returncode != 0:
+        if process.returncode != 0 or turn_errors:
             print(
                 f"工程失敗: {stage} ({self._format_duration(summary.elapsed_seconds)})",
                 file=sys.stderr,
                 flush=True,
             )
             raise CodexExecutionError(
-                f"Codex の {stage} 工程が終了コード {process.returncode} で失敗しました。"
+                f"Codex の {stage} 工程が失敗しました。終了コード: {process.returncode}。"
+                f" Codexのエラー: {' | '.join(turn_errors)}。"
                 f" ログ: {stderr_log}",
                 summary,
             )
@@ -334,6 +347,23 @@ class CodexRunner:
             flush=True,
         )
         return summary
+
+    def retry_after_cli_error(
+        self,
+        request: Path | None,
+        error: str,
+        revision_instruction: str | None = None,
+        target_video: Path | None = None,
+    ) -> StageSummary:
+        """Ask the self-check stage to investigate and fix a CLI validation error."""
+        return self._run_stage(
+            "self-check-video",
+            self.project.prompts / "self-check-video.md",
+            request,
+            revision_instruction,
+            target_video,
+            previous_error=error,
+        )
 
     @staticmethod
     def _is_video_stage(stage: str) -> bool:
@@ -495,6 +525,7 @@ class CodexRunner:
         revision_instruction: str | None = None,
         target_video: Path | None = None,
         font_issue: str | None = None,
+        previous_error: str | None = None,
     ) -> str:
         instructions = prompt_path.read_text(encoding="utf-8").strip()
         request_context = ""
@@ -536,8 +567,21 @@ class CodexRunner:
                 "- ユーザーの修正指示:\n"
                 f"{revision_instruction}\n"
             )
+        previous_error_context = ""
+        if previous_error:
+            previous_error_context = (
+                f"## 前回の実行エラー\n{previous_error}\n"
+                "原因を調査し、修正して再実行してください。\n\n"
+            )
         return (
             f"{instructions}\n\n"
+            "## ツール実行エラー時の再試行\n"
+            "ツールの実行がエラーになったら、ログとエラー出力を確認し、原因を特定してください。"
+            "設定、入力、コードなど修正できる原因は修正してから、失敗した操作を再実行してください。"
+            "同じ原因によるエラーが4回連続した場合に限り、この工程を失敗として報告してください。"
+            "エラー内容が変わった場合は連続回数をリセットしてください。"
+            "初回のエラーだけで工程を終了してはいけません。\n\n"
+            f"{previous_error_context}"
             "## 実行コンテキスト\n"
             f"- 現在の工程: {stage}\n"
             f"- プロジェクトルート: {self.project.root}\n"
