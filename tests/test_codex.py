@@ -277,21 +277,21 @@ class CodexRunnerTests(unittest.TestCase):
             self.assertIn("ナレーション話者: ずんだもん", check_command[-1])
             self.assertTrue((project.logs / "self-check-video.stdout.log").is_file())
 
-    def test_stops_before_self_check_when_generation_fails(self) -> None:
+    def test_stops_before_self_check_after_four_identical_generation_failures(self) -> None:
         with TemporaryDirectory() as temp:
             project, request = self.make_project(Path(temp))
             success = FakeCodexProcess([])
             failure = FakeCodexProcess([], returncode=1)
             with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
-                "utsuroclip.codex.subprocess.Popen", side_effect=[success, success, failure]
+                "utsuroclip.codex.subprocess.Popen", side_effect=[success, success, *[failure] * 4]
             ) as popen, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                 with self.assertRaises(CodexExecutionError):
                     CodexRunner(project).run_pipeline(request)
 
-            self.assertEqual(popen.call_count, 3)
+            self.assertEqual(popen.call_count, 6)
             self.assertFalse((project.logs / "self-check-video.stdout.log").exists())
 
-    def test_stops_revision_when_self_check_fails(self) -> None:
+    def test_stops_revision_after_four_identical_self_check_failures(self) -> None:
         with TemporaryDirectory() as temp:
             project, _ = self.make_project(Path(temp))
             (project.prompts / "revise-video.md").write_text("# revise", encoding="utf-8")
@@ -299,15 +299,15 @@ class CodexRunnerTests(unittest.TestCase):
             target.touch()
             with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
                 "utsuroclip.codex.subprocess.Popen",
-                side_effect=[FakeCodexProcess([]), FakeCodexProcess([], returncode=1)],
+                side_effect=[FakeCodexProcess([]), *[FakeCodexProcess([], returncode=1) for _ in range(4)]],
             ) as popen, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                 with self.assertRaises(CodexExecutionError):
                     CodexRunner(project).run_revision("修正", target)
 
-            self.assertEqual(popen.call_count, 2)
+            self.assertEqual(popen.call_count, 5)
             self.assertTrue((project.logs / "self-check-video.stdout.log").is_file())
 
-    def test_stops_after_a_failed_stage(self) -> None:
+    def test_stops_after_four_identical_stage_failures(self) -> None:
         with TemporaryDirectory() as temp:
             project, request = self.make_project(Path(temp))
             failed = FakeCodexProcess(
@@ -316,12 +316,20 @@ class CodexRunnerTests(unittest.TestCase):
                 returncode=1,
             )
             with patch("utsuroclip.codex.shutil.which", return_value="/bin/codex"), patch(
-                "utsuroclip.codex.subprocess.Popen", return_value=failed
+                "utsuroclip.codex.subprocess.Popen",
+                side_effect=[
+                    FakeCodexProcess(
+                        [{"type": "turn.completed", "usage": {"input_tokens": 10}}],
+                        "failure\n",
+                        returncode=1,
+                    )
+                    for _ in range(4)
+                ],
             ) as popen, redirect_stdout(StringIO()) as stdout:
                 with self.assertRaises(CodexExecutionError):
                     CodexRunner(project).run_pipeline(request)
 
-            self.assertEqual(popen.call_count, 1)
+            self.assertEqual(popen.call_count, 4)
             self.assertTrue((project.logs / "research.stderr.log").is_file())
             self.assertIn("input 10", stdout.getvalue())
 
