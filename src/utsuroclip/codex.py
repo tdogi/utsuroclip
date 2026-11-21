@@ -67,6 +67,7 @@ class CodexRunner:
     speaker: str = "春日部つむぎ"
     commercial_env: dict[str, str] | None = None
     FONT_REPAIR_LIMIT = 2
+    SAME_ERROR_LIMIT = 4
 
     STAGES = (
         ("research", "research.md"),
@@ -225,6 +226,36 @@ class CodexRunner:
             ))
 
     def _run_stage(
+        self,
+        stage: str,
+        prompt_path: Path,
+        request: Path | None = None,
+        revision_instruction: str | None = None,
+        target_video: Path | None = None,
+        font_issue: str | None = None,
+    ) -> StageSummary:
+        consecutive_error = None
+        consecutive_failures = 0
+        while True:
+            try:
+                return self._run_stage_once(
+                    stage, prompt_path, request, revision_instruction, target_video, font_issue
+                )
+            except CodexExecutionError as error:
+                stderr_log = self.project.logs / f"{stage}.stderr.log"
+                stderr = stderr_log.read_text(encoding="utf-8") if stderr_log.exists() else ""
+                signature = f"{error}\n{stderr}"
+                consecutive_failures = consecutive_failures + 1 if signature == consecutive_error else 1
+                consecutive_error = signature
+                if consecutive_failures >= self.SAME_ERROR_LIMIT:
+                    raise
+                print(
+                    f"工程を再試行します: {stage} ({consecutive_failures}/{self.SAME_ERROR_LIMIT})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+    def _run_stage_once(
         self,
         stage: str,
         prompt_path: Path,
