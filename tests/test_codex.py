@@ -105,6 +105,20 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertIn("ナレーション話者: 四国めたん", prompt)
         self.assertIn("--speaker", prompt)
 
+    def test_prompt_investigates_and_fixes_previous_tool_error(self) -> None:
+        with TemporaryDirectory() as temp:
+            project, request = self.make_project(Path(temp))
+            prompt = CodexRunner(project)._build_prompt(
+                "generate-video",
+                project.prompts / "generate-video.md",
+                request,
+                previous_error="Manim returned exit code 1",
+            )
+
+        self.assertIn("原因を特定してください", prompt)
+        self.assertIn("修正してから", prompt)
+        self.assertIn("Manim returned exit code 1", prompt)
+
     def test_commercial_mode_reaches_video_stages_only(self) -> None:
         with TemporaryDirectory() as temp:
             project, request = self.make_project(Path(temp))

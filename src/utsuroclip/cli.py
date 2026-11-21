@@ -26,6 +26,7 @@ from .duration import read_duration_record, requested_duration
 SPEAKERS = ("ずんだもん", "四国めたん", "春日部つむぎ")
 DEFAULT_SPEAKER = "春日部つむぎ"
 DEFAULT_BGM_VOLUME = 0.15
+SAME_ERROR_LIMIT = 4
 
 
 def validate_video_duration(video: Path, target_seconds: float) -> float:
@@ -413,13 +414,33 @@ def main(argv: list[str] | None = None) -> int:
             path.resolve() for path in project.output.glob("*.mp4") if path.is_file()
         }
         tools_before = project.tools_snapshot()
+        runner = CodexRunner(project, args.codex_bin, args.speaker, commercial_env)
         try:
-            CodexRunner(project, args.codex_bin, args.speaker, commercial_env).run_pipeline(request)
+            runner.run_pipeline(request)
         finally:
             project.require_tools_unchanged(tools_before)
-        if args.commercial:
-            validate_scene_sources(project.work / "scenes")
-        generated_video = generated_video_path(project, previous_videos)
+        consecutive_validation_error = None
+        consecutive_validation_failures = 0
+        while True:
+            try:
+                if args.commercial:
+                    validate_scene_sources(project.work / "scenes")
+                generated_video = generated_video_path(project, previous_videos)
+                target_seconds = explicit_seconds or read_duration_record(project.target_duration_record)
+                if target_seconds is not None:
+                    validate_video_duration(generated_video, target_seconds)
+                break
+            except (CodexExecutionError, CommercialFontError) as error:
+                signature = f"{type(error).__name__}: {error}"
+                consecutive_validation_failures = (
+                    consecutive_validation_failures + 1
+                    if signature == consecutive_validation_error
+                    else 1
+                )
+                consecutive_validation_error = signature
+                if consecutive_validation_failures >= SAME_ERROR_LIMIT:
+                    raise
+                runner.retry_after_cli_error(request, signature)
         final_video = final_video_path(project)
         if generated_video != final_video and final_video.exists():
             raise CodexExecutionError(
@@ -427,9 +448,6 @@ def main(argv: list[str] | None = None) -> int:
             )
         if retained_bgm is not None:
             mix_bgm(generated_video, retained_bgm, recorded_bgm_volume(project))
-        target_seconds = explicit_seconds or read_duration_record(project.target_duration_record)
-        if target_seconds is not None:
-            validate_video_duration(generated_video, target_seconds)
         if generated_video != final_video:
             generated_video.rename(final_video)
         write_video_records(project, final_video, args.speaker, args.commercial)
@@ -502,6 +520,7 @@ def _revise_with_fonts(
     commercial_env: dict[str, str] | None,
 ) -> int:
     commercial = commercial_env is not None
+    runner = CodexRunner(project, args.codex_bin, speaker, commercial_env)
     try:
         backup.create()
     except OSError:
@@ -510,12 +529,30 @@ def _revise_with_fonts(
     try:
         tools_before = project.tools_snapshot()
         try:
-            CodexRunner(project, args.codex_bin, speaker, commercial_env).run_revision(args.prompt, target_video)
+            runner.run_revision(args.prompt, target_video)
         finally:
             project.require_tools_unchanged(tools_before)
-        if commercial:
-            validate_scene_sources(project.work / "scenes")
-        generated_video = generated_video_path(project, previous_videos, "修正版の動画")
+        consecutive_validation_error = None
+        consecutive_validation_failures = 0
+        while True:
+            try:
+                if commercial:
+                    validate_scene_sources(project.work / "scenes")
+                generated_video = generated_video_path(project, previous_videos, "修正版の動画")
+                break
+            except (CodexExecutionError, CommercialFontError) as error:
+                signature = f"{type(error).__name__}: {error}"
+                consecutive_validation_failures = (
+                    consecutive_validation_failures + 1
+                    if signature == consecutive_validation_error
+                    else 1
+                )
+                consecutive_validation_error = signature
+                if consecutive_validation_failures >= SAME_ERROR_LIMIT:
+                    raise
+                runner.retry_after_cli_error(
+                    None, signature, revision_instruction=args.prompt, target_video=target_video
+                )
         revised_video = revised_video_path(target_video)
         if generated_video != revised_video and revised_video.exists():
             raise CodexExecutionError(
